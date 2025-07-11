@@ -3,54 +3,91 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ezio/Lino - Gestore Spese Persistente</title>
+    <title>Ezio/Lino - Gestore Spese Condivise</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <style>
-        .fade-in {
-            animation: fadeIn 0.3s ease-in;
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        .card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
-        
-        .pulse-success {
-            animation: pulseSuccess 0.5s ease-in-out;
+        .floating-action {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
         }
-        
-        @keyframes pulseSuccess {
-            0% { background-color: #10B981; }
-            50% { background-color: #059669; }
-            100% { background-color: #10B981; }
-        }
-        
         .notification {
             position: fixed;
             top: 20px;
             right: 20px;
+            z-index: 1001;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+        .notification.show {
+            transform: translateX(0);
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .room-code {
+            font-family: 'Courier New', monospace;
+            font-size: 1.5rem;
+            letter-spacing: 0.2rem;
+            background: linear-gradient(45deg, #4338ca, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .expense-item {
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+        .expense-item:hover {
+            border-left-color: #667eea;
+            background: rgba(102, 126, 234, 0.05);
+        }
+        .balance-positive {
+            color: #10b981;
+        }
+        .balance-negative {
+            color: #ef4444;
+        }
+        .balance-zero {
+            color: #6b7280;
+        }
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f4f6;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .sync-indicator {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 1000;
             transition: all 0.3s ease;
         }
-        
-        .room-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        
-        .expense-card {
-            border-left: 4px solid #3B82F6;
-        }
-        
-        .balance-positive {
-            color: #10B981;
-        }
-        
-        .balance-negative {
-            color: #EF4444;
-        }
-        
-        .connection-indicator {
+        .connection-status {
             position: fixed;
             top: 10px;
             left: 10px;
@@ -58,910 +95,986 @@
         }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="gradient-bg min-h-screen">
     <!-- Indicatore di connessione -->
-    <div id="connectionIndicator" class="connection-indicator">
-        <div class="flex items-center space-x-2 bg-white px-3 py-2 rounded-full shadow-md">
-            <div id="connectionStatus" class="w-3 h-3 bg-green-500 rounded-full"></div>
-            <span id="connectionText" class="text-sm font-medium text-gray-700">Online</span>
+    <div id="connectionStatus" class="connection-status">
+        <div class="flex items-center bg-green-500 text-white px-3 py-1 rounded-full text-sm">
+            <i class="fas fa-wifi mr-2"></i>
+            <span>Online</span>
+        </div>
+    </div>
+
+    <!-- Indicatore di sincronizzazione -->
+    <div id="syncIndicator" class="sync-indicator opacity-0">
+        <div class="bg-blue-500 text-white px-4 py-2 rounded-full text-sm flex items-center">
+            <div class="loading-spinner mr-2"></div>
+            Sincronizzazione in corso...
         </div>
     </div>
 
     <!-- Notifiche -->
-    <div id="notifications" class="notification"></div>
+    <div id="notification" class="notification">
+        <div class="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg">
+            <i class="fas fa-check mr-2"></i>
+            <span id="notificationText">Operazione completata</span>
+        </div>
+    </div>
 
-    <!-- Header -->
-    <header class="bg-white shadow-sm border-b border-gray-200">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center">
-                    <i class="fas fa-coins text-blue-600 text-2xl mr-3"></i>
-                    <h1 class="text-xl font-bold text-gray-900">Ezio/Lino</h1>
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-5xl font-bold text-white mb-2">
+                <i class="fas fa-calculator mr-3"></i>
+                Ezio/Lino
+            </h1>
+            <p class="text-xl text-white opacity-90">Gestore Spese Condivise</p>
+            <p class="text-sm text-white opacity-75 mt-2">Sincronizzazione multi-dispositivo in tempo reale</p>
+        </div>
+
+        <!-- Selezione/Creazione Stanza -->
+        <div id="roomSelection" class="card rounded-xl shadow-2xl p-8 mb-8">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">
+                <i class="fas fa-door-open mr-3 text-blue-600"></i>
+                Accedi alla Stanza
+            </h2>
+            
+            <div class="grid md:grid-cols-2 gap-8">
+                <!-- Crea Nuova Stanza -->
+                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-lg border-2 border-blue-200">
+                    <h3 class="text-xl font-bold text-blue-800 mb-4">
+                        <i class="fas fa-plus-circle mr-2"></i>
+                        Crea Nuova Stanza
+                    </h3>
+                    <input type="text" id="roomName" placeholder="Nome della stanza (es: Vacanze Sicilia)" 
+                           class="w-full p-3 border border-blue-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button id="createRoomBtn" class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-bold hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-magic mr-2"></i>
+                        Crea Stanza
+                    </button>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <button id="exportBtn" class="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium">
-                        <i class="fas fa-download mr-2"></i>Esporta
+
+                <!-- Accedi a Stanza Esistente -->
+                <div class="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-lg border-2 border-green-200">
+                    <h3 class="text-xl font-bold text-green-800 mb-4">
+                        <i class="fas fa-sign-in-alt mr-2"></i>
+                        Accedi a Stanza Esistente
+                    </h3>
+                    <input type="text" id="roomCode" placeholder="Codice stanza (es: ABC123)" 
+                           class="w-full p-3 border border-green-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-green-500 text-center text-lg tracking-wider">
+                    <button id="joinRoomBtn" class="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-bold hover:bg-green-700 transition-colors">
+                        <i class="fas fa-door-open mr-2"></i>
+                        Accedi alla Stanza
                     </button>
-                    <button id="importBtn" class="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium">
-                        <i class="fas fa-upload mr-2"></i>Importa
-                    </button>
-                    <input type="file" id="importFile" accept=".json" class="hidden">
+                </div>
+            </div>
+
+            <!-- Stanze Recenti -->
+            <div id="recentRooms" class="mt-8">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-history mr-2"></i>
+                    Stanze Recenti
+                </h3>
+                <div id="recentRoomsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Stanze recenti verranno aggiunte qui -->
                 </div>
             </div>
         </div>
-    </header>
 
-    <!-- Contenitore principale -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        <!-- Gestione Stanza -->
-        <div id="roomSection" class="mb-8">
-            <div class="room-card text-white rounded-xl p-6 shadow-lg">
-                <h2 class="text-2xl font-bold mb-4">
-                    <i class="fas fa-users mr-2"></i>Gestione Stanza
-                </h2>
-                
-                <div id="roomSelection" class="space-y-4">
-                    <div class="flex flex-col sm:flex-row gap-4">
-                        <div class="flex-1">
-                            <label class="block text-sm font-medium mb-2">Codice Stanza</label>
-                            <input type="text" id="roomCode" placeholder="Inserisci codice stanza" 
-                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                        </div>
-                        <div class="flex gap-2">
-                            <button id="joinRoomBtn" class="bg-green-500 hover:bg-green-600 px-6 py-2 rounded-lg font-medium transition-colors">
-                                <i class="fas fa-sign-in-alt mr-2"></i>Accedi
-                            </button>
-                            <button id="createRoomBtn" class="bg-blue-500 hover:bg-blue-600 px-6 py-2 rounded-lg font-medium transition-colors">
-                                <i class="fas fa-plus mr-2"></i>Crea Nuova
-                            </button>
-                        </div>
+        <!-- Interfaccia Principale (nascosta inizialmente) -->
+        <div id="mainInterface" class="hidden">
+            <!-- Info Stanza -->
+            <div class="card rounded-xl shadow-2xl p-6 mb-8">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between">
+                    <div class="mb-4 md:mb-0">
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            <i class="fas fa-users mr-2 text-blue-600"></i>
+                            <span id="currentRoomName">Stanza</span>
+                        </h2>
+                        <p class="text-gray-600 mt-1">
+                            <i class="fas fa-key mr-2"></i>
+                            Codice stanza: <span id="currentRoomCode" class="room-code"></span>
+                        </p>
                     </div>
-                </div>
-                
-                <div id="roomInfo" class="hidden mt-4 p-4 bg-white bg-opacity-20 rounded-lg">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="font-medium">Stanza Attiva: <span id="currentRoom"></span></p>
-                            <p class="text-sm opacity-90">
-                                <i class="fas fa-save mr-1"></i>
-                                Ultimo salvataggio: <span id="lastSaved">-</span>
-                            </p>
-                        </div>
-                        <button id="leaveRoomBtn" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg text-sm font-medium">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Esci
+                    <div class="flex gap-2">
+                        <button id="shareRoomBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-share-alt mr-2"></i>
+                            Condividi
+                        </button>
+                        <button id="exportDataBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                            <i class="fas fa-download mr-2"></i>
+                            Esporta
+                        </button>
+                        <button id="leaveRoomBtn" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
+                            <i class="fas fa-sign-out-alt mr-2"></i>
+                            Esci
                         </button>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Gestione Partecipanti -->
-        <div id="participantsSection" class="hidden mb-8">
-            <div class="bg-white rounded-xl p-6 shadow-lg">
-                <h2 class="text-xl font-bold text-gray-900 mb-4">
-                    <i class="fas fa-user-friends mr-2"></i>Partecipanti
-                </h2>
-                
-                <div class="flex flex-col sm:flex-row gap-4 mb-4">
-                    <div class="flex-1">
-                        <input type="text" id="participantName" placeholder="Nome partecipante" 
-                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    </div>
-                    <button id="addParticipantBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
-                        <i class="fas fa-user-plus mr-2"></i>Aggiungi
+            <!-- Gestione Partecipanti -->
+            <div class="card rounded-xl shadow-2xl p-6 mb-8">
+                <h3 class="text-2xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-user-friends mr-2 text-green-600"></i>
+                    Partecipanti
+                </h3>
+                <div class="flex flex-col md:flex-row gap-4 mb-4">
+                    <input type="text" id="participantName" placeholder="Nome partecipante" 
+                           class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <button id="addParticipantBtn" class="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition-colors">
+                        <i class="fas fa-user-plus mr-2"></i>
+                        Aggiungi
                     </button>
                 </div>
-                
-                <div id="participantsList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+                <div id="participantsList" class="flex flex-wrap gap-2">
+                    <!-- Partecipanti verranno aggiunti qui -->
+                </div>
             </div>
-        </div>
 
-        <!-- Aggiunta Spesa -->
-        <div id="expenseSection" class="hidden mb-8">
-            <div class="bg-white rounded-xl p-6 shadow-lg">
-                <h2 class="text-xl font-bold text-gray-900 mb-4">
-                    <i class="fas fa-receipt mr-2"></i>Aggiungi Spesa
-                </h2>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Data</label>
+            <!-- Aggiunta Spesa -->
+            <div class="card rounded-xl shadow-2xl p-6 mb-8">
+                <h3 class="text-2xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-plus-circle mr-2 text-purple-600"></i>
+                    Aggiungi Spesa
+                </h3>
+                <form id="expenseForm" class="space-y-4">
+                    <div class="grid md:grid-cols-2 gap-4">
                         <input type="date" id="expenseDate" 
-                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                               class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        <input type="number" id="expenseAmount" placeholder="Importo (€)" step="0.01" 
+                               class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Importo (€)</label>
-                        <input type="number" id="expenseAmount" placeholder="25.50" step="0.01" 
-                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    </div>
-                </div>
-                
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Descrizione</label>
-                    <input type="text" id="expenseDescription" placeholder="Descrizione della spesa" 
-                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Chi ha pagato</label>
-                        <select id="expensePayer" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                            <option value="">Seleziona chi ha pagato</option>
+                    <input type="text" id="expenseDescription" placeholder="Descrizione spesa" 
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <select id="expensePayer" class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                            <option value="">Chi ha pagato?</option>
                         </select>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="splitAll" class="mr-2" checked>
+                            <label for="splitAll" class="text-gray-700">Dividi tra tutti</label>
+                        </div>
                     </div>
+                    <div id="participantSelection" class="hidden">
+                        <p class="text-sm text-gray-600 mb-2">Seleziona partecipanti coinvolti:</p>
+                        <div id="participantCheckboxes" class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <!-- Checkbox partecipanti -->
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-purple-600 text-white py-3 px-6 rounded-lg font-bold hover:bg-purple-700 transition-colors">
+                        <i class="fas fa-save mr-2"></i>
+                        Aggiungi Spesa
+                    </button>
+                </form>
+            </div>
+
+            <!-- Lista Spese -->
+            <div class="card rounded-xl shadow-2xl p-6 mb-8">
+                <h3 class="text-2xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-list mr-2 text-orange-600"></i>
+                    Spese Registrate
+                </h3>
+                <div id="expensesList" class="space-y-3">
+                    <!-- Spese verranno aggiunte qui -->
+                </div>
+            </div>
+
+            <!-- Bilancio e Rimborsi -->
+            <div class="card rounded-xl shadow-2xl p-6">
+                <h3 class="text-2xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-balance-scale mr-2 text-red-600"></i>
+                    Bilancio e Rimborsi
+                </h3>
+                <div class="grid md:grid-cols-2 gap-8">
+                    <!-- Bilancio Individuale -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Dividi tra</label>
-                        <div class="flex items-center space-x-4">
-                            <label class="flex items-center">
-                                <input type="radio" name="splitType" value="all" checked class="mr-2">
-                                <span class="text-sm">Tutti</span>
-                            </label>
-                            <label class="flex items-center">
-                                <input type="radio" name="splitType" value="custom" class="mr-2">
-                                <span class="text-sm">Personalizzato</span>
-                            </label>
+                        <h4 class="text-lg font-bold text-gray-700 mb-3">Bilancio Individuale</h4>
+                        <div id="balanceList" class="space-y-2">
+                            <!-- Bilanci verranno aggiunti qui -->
+                        </div>
+                    </div>
+                    <!-- Rimborsi -->
+                    <div>
+                        <h4 class="text-lg font-bold text-gray-700 mb-3">Rimborsi Necessari</h4>
+                        <div id="refundsList" class="space-y-3">
+                            <!-- Rimborsi verranno aggiunti qui -->
                         </div>
                     </div>
                 </div>
-                
-                <div id="customSplitSection" class="hidden mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Seleziona partecipanti</label>
-                    <div id="customSplitList" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
-                </div>
-                
-                <button id="addExpenseBtn" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-medium transition-colors">
-                    <i class="fas fa-plus mr-2"></i>Aggiungi Spesa
-                </button>
-            </div>
-        </div>
-
-        <!-- Lista Spese -->
-        <div id="expensesListSection" class="hidden mb-8">
-            <div class="bg-white rounded-xl p-6 shadow-lg">
-                <h2 class="text-xl font-bold text-gray-900 mb-4">
-                    <i class="fas fa-list mr-2"></i>Spese Registrate
-                </h2>
-                <div id="expensesList" class="space-y-3"></div>
-            </div>
-        </div>
-
-        <!-- Bilanci -->
-        <div id="balanceSection" class="hidden mb-8">
-            <div class="bg-white rounded-xl p-6 shadow-lg">
-                <h2 class="text-xl font-bold text-gray-900 mb-4">
-                    <i class="fas fa-balance-scale mr-2"></i>Bilanci
-                </h2>
-                <div id="balancesList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
-            </div>
-        </div>
-
-        <!-- Rimborsi -->
-        <div id="reimbursementSection" class="hidden">
-            <div class="bg-white rounded-xl p-6 shadow-lg">
-                <h2 class="text-xl font-bold text-gray-900 mb-4">
-                    <i class="fas fa-exchange-alt mr-2"></i>Rimborsi Necessari
-                </h2>
-                <div id="reimbursementsList" class="space-y-3"></div>
             </div>
         </div>
     </div>
 
+    <!-- Bottone Floating Action -->
+    <div id="floatingAction" class="floating-action hidden">
+        <button id="quickAddBtn" class="bg-purple-600 text-white w-16 h-16 rounded-full shadow-lg hover:bg-purple-700 transition-colors">
+            <i class="fas fa-plus text-xl"></i>
+        </button>
+    </div>
+
     <script>
-        // Classe per gestire la persistenza dei dati
-        class PersistentStorage {
+        // Configurazione Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDummy_Key_For_Demo",
+            authDomain: "ezio-lino-demo.firebaseapp.com",
+            projectId: "ezio-lino-demo",
+            storageBucket: "ezio-lino-demo.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef123456"
+        };
+
+        // Simulazione Firebase per demo (in produzione usare Firebase reale)
+        class MockFirestore {
             constructor() {
-                this.currentRoom = null;
-                this.isOnline = navigator.onLine;
-                this.lastSyncTime = null;
-                this.pendingChanges = [];
-                this.syncInterval = null;
-                
-                // Eventi di connessione
-                window.addEventListener('online', () => this.handleOnline());
-                window.addEventListener('offline', () => this.handleOffline());
-                
-                this.updateConnectionStatus();
+                this.data = JSON.parse(localStorage.getItem('ezio-lino-cloud-data') || '{}');
+                this.listeners = {};
             }
-            
-            handleOnline() {
-                this.isOnline = true;
-                this.updateConnectionStatus();
-                this.syncPendingChanges();
-            }
-            
-            handleOffline() {
-                this.isOnline = false;
-                this.updateConnectionStatus();
-            }
-            
-            updateConnectionStatus() {
-                const indicator = document.getElementById('connectionStatus');
-                const text = document.getElementById('connectionText');
-                
-                if (this.isOnline) {
-                    indicator.className = 'w-3 h-3 bg-green-500 rounded-full';
-                    text.textContent = 'Online';
-                } else {
-                    indicator.className = 'w-3 h-3 bg-red-500 rounded-full';
-                    text.textContent = 'Offline';
-                }
-            }
-            
-            generateRoomCode() {
-                return Math.random().toString(36).substr(2, 8).toUpperCase();
-            }
-            
-            createRoom() {
-                const roomCode = this.generateRoomCode();
-                const roomData = {
-                    code: roomCode,
-                    participants: [],
-                    expenses: [],
-                    created: new Date().toISOString(),
-                    lastModified: new Date().toISOString()
-                };
-                
-                this.saveRoomData(roomCode, roomData);
-                return roomCode;
-            }
-            
-            joinRoom(roomCode) {
-                const roomData = this.loadRoomData(roomCode);
-                if (roomData) {
-                    this.currentRoom = roomCode;
-                    this.startPeriodicSync();
-                    return roomData;
-                }
-                return null;
-            }
-            
-            saveRoomData(roomCode, data) {
-                try {
-                    // Salvataggio locale
-                    localStorage.setItem(`room_${roomCode}`, JSON.stringify(data));
-                    
-                    // Salvataggio cloud simulato (in un'app reale useresti un vero database)
-                    if (this.isOnline) {
-                        this.saveToCloud(roomCode, data);
-                    } else {
-                        this.addPendingChange('save', roomCode, data);
-                    }
-                    
-                    this.lastSyncTime = new Date();
-                    this.updateLastSavedTime();
-                    this.showNotification('Dati salvati con successo', 'success');
-                    
-                } catch (error) {
-                    console.error('Errore nel salvataggio:', error);
-                    this.showNotification('Errore nel salvataggio', 'error');
-                }
-            }
-            
-            loadRoomData(roomCode) {
-                try {
-                    // Prova prima dal cloud se online
-                    if (this.isOnline) {
-                        const cloudData = this.loadFromCloud(roomCode);
-                        if (cloudData) {
-                            // Aggiorna anche la copia locale
-                            localStorage.setItem(`room_${roomCode}`, JSON.stringify(cloudData));
-                            return cloudData;
+
+            collection(path) {
+                return {
+                    doc: (id) => ({
+                        set: (data) => {
+                            if (!this.data[path]) this.data[path] = {};
+                            this.data[path][id] = { ...data, id };
+                            this.save();
+                            this.notifyListeners(path, id, data);
+                            return Promise.resolve();
+                        },
+                        update: (data) => {
+                            if (!this.data[path]) this.data[path] = {};
+                            this.data[path][id] = { ...this.data[path][id], ...data };
+                            this.save();
+                            this.notifyListeners(path, id, this.data[path][id]);
+                            return Promise.resolve();
+                        },
+                        get: () => {
+                            const doc = this.data[path] ? this.data[path][id] : null;
+                            return Promise.resolve({
+                                exists: !!doc,
+                                data: () => doc
+                            });
+                        },
+                        onSnapshot: (callback) => {
+                            const key = `${path}/${id}`;
+                            this.listeners[key] = callback;
+                            const doc = this.data[path] ? this.data[path][id] : null;
+                            callback({
+                                exists: !!doc,
+                                data: () => doc
+                            });
+                            return () => delete this.listeners[key];
                         }
-                    }
-                    
-                    // Fallback al salvataggio locale
-                    const localData = localStorage.getItem(`room_${roomCode}`);
-                    if (localData) {
-                        return JSON.parse(localData);
-                    }
-                    
-                    return null;
-                    
-                } catch (error) {
-                    console.error('Errore nel caricamento:', error);
-                    this.showNotification('Errore nel caricamento dei dati', 'error');
-                    return null;
-                }
+                    })
+                };
             }
-            
-            saveToCloud(roomCode, data) {
-                // Simulazione salvataggio cloud
-                // In un'app reale, qui faresti una chiamata API
-                const cloudKey = `cloud_room_${roomCode}`;
-                sessionStorage.setItem(cloudKey, JSON.stringify(data));
+
+            save() {
+                localStorage.setItem('ezio-lino-cloud-data', JSON.stringify(this.data));
             }
-            
-            loadFromCloud(roomCode) {
-                // Simulazione caricamento cloud
-                // In un'app reale, qui faresti una chiamata API
-                const cloudKey = `cloud_room_${roomCode}`;
-                const data = sessionStorage.getItem(cloudKey);
-                return data ? JSON.parse(data) : null;
-            }
-            
-            addPendingChange(type, roomCode, data) {
-                this.pendingChanges.push({
-                    type,
-                    roomCode,
-                    data,
-                    timestamp: new Date().toISOString()
-                });
-            }
-            
-            syncPendingChanges() {
-                if (this.pendingChanges.length === 0) return;
-                
-                const changes = [...this.pendingChanges];
-                this.pendingChanges = [];
-                
-                changes.forEach(change => {
-                    if (change.type === 'save') {
-                        this.saveToCloud(change.roomCode, change.data);
-                    }
-                });
-                
-                this.showNotification('Sincronizzazione completata', 'success');
-            }
-            
-            startPeriodicSync() {
-                if (this.syncInterval) {
-                    clearInterval(this.syncInterval);
-                }
-                
-                this.syncInterval = setInterval(() => {
-                    if (this.isOnline && this.currentRoom) {
-                        this.syncRoomData();
-                    }
-                }, 30000); // Sync ogni 30 secondi
-            }
-            
-            syncRoomData() {
-                if (!this.currentRoom) return;
-                
-                const localData = this.loadRoomData(this.currentRoom);
-                if (localData) {
-                    this.saveToCloud(this.currentRoom, localData);
-                }
-            }
-            
-            exportData() {
-                if (!this.currentRoom) return null;
-                
-                const data = this.loadRoomData(this.currentRoom);
-                if (data) {
-                    const exportData = {
-                        ...data,
-                        exportDate: new Date().toISOString(),
-                        version: "1.0"
-                    };
-                    
-                    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-                        type: 'application/json'
+
+            notifyListeners(path, id, data) {
+                const key = `${path}/${id}`;
+                if (this.listeners[key]) {
+                    this.listeners[key]({
+                        exists: true,
+                        data: () => data
                     });
-                    
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `ezio_lino_${this.currentRoom}_${new Date().toISOString().split('T')[0]}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    
-                    this.showNotification('Dati esportati con successo', 'success');
                 }
-            }
-            
-            importData(file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const data = JSON.parse(e.target.result);
-                        
-                        // Validazione dei dati
-                        if (!data.code || !data.participants || !data.expenses) {
-                            throw new Error('Formato file non valido');
-                        }
-                        
-                        // Importa i dati
-                        this.saveRoomData(data.code, data);
-                        this.showNotification('Dati importati con successo', 'success');
-                        
-                        // Aggiorna l'interfaccia
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1000);
-                        
-                    } catch (error) {
-                        console.error('Errore nell\'importazione:', error);
-                        this.showNotification('Errore nell\'importazione del file', 'error');
-                    }
-                };
-                reader.readAsText(file);
-            }
-            
-            updateLastSavedTime() {
-                const element = document.getElementById('lastSaved');
-                if (element) {
-                    element.textContent = new Date().toLocaleTimeString();
-                }
-            }
-            
-            showNotification(message, type = 'info') {
-                const container = document.getElementById('notifications');
-                const notification = document.createElement('div');
-                
-                const bgColor = type === 'success' ? 'bg-green-500' : 
-                               type === 'error' ? 'bg-red-500' : 'bg-blue-500';
-                
-                notification.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg mb-2 fade-in`;
-                notification.innerHTML = `
-                    <div class="flex items-center justify-between">
-                        <span>${message}</span>
-                        <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
-                `;
-                
-                container.appendChild(notification);
-                
-                setTimeout(() => {
-                    if (notification.parentElement) {
-                        notification.remove();
-                    }
-                }, 5000);
             }
         }
+
+        // Inizializzazione
+        const db = new MockFirestore();
         
-        // Classe principale dell'applicazione
-        class ExpenseTracker {
-            constructor() {
-                this.storage = new PersistentStorage();
-                this.currentRoom = null;
-                this.roomData = null;
-                
-                this.initializeApp();
-                this.bindEvents();
+        // Stato dell'applicazione
+        let currentRoom = null;
+        let currentRoomData = null;
+        let roomListener = null;
+
+        // Elementi DOM
+        const roomSelection = document.getElementById('roomSelection');
+        const mainInterface = document.getElementById('mainInterface');
+        const roomName = document.getElementById('roomName');
+        const roomCode = document.getElementById('roomCode');
+        const createRoomBtn = document.getElementById('createRoomBtn');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const currentRoomName = document.getElementById('currentRoomName');
+        const currentRoomCode = document.getElementById('currentRoomCode');
+        const participantName = document.getElementById('participantName');
+        const addParticipantBtn = document.getElementById('addParticipantBtn');
+        const participantsList = document.getElementById('participantsList');
+        const expenseForm = document.getElementById('expenseForm');
+        const expenseDate = document.getElementById('expenseDate');
+        const expenseAmount = document.getElementById('expenseAmount');
+        const expenseDescription = document.getElementById('expenseDescription');
+        const expensePayer = document.getElementById('expensePayer');
+        const splitAll = document.getElementById('splitAll');
+        const participantSelection = document.getElementById('participantSelection');
+        const participantCheckboxes = document.getElementById('participantCheckboxes');
+        const expensesList = document.getElementById('expensesList');
+        const balanceList = document.getElementById('balanceList');
+        const refundsList = document.getElementById('refundsList');
+        const leaveRoomBtn = document.getElementById('leaveRoomBtn');
+        const shareRoomBtn = document.getElementById('shareRoomBtn');
+        const exportDataBtn = document.getElementById('exportDataBtn');
+        const notification = document.getElementById('notification');
+        const notificationText = document.getElementById('notificationText');
+        const syncIndicator = document.getElementById('syncIndicator');
+        const connectionStatus = document.getElementById('connectionStatus');
+
+        // Utility Functions
+        function generateRoomCode() {
+            return Math.random().toString(36).substr(2, 6).toUpperCase();
+        }
+
+        function showNotification(message, type = 'success') {
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500'
+            };
+            
+            notification.innerHTML = `
+                <div class="${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg">
+                    <i class="fas fa-${type === 'success' ? 'check' : type === 'error' ? 'exclamation-triangle' : 'info'} mr-2"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            
+            notification.classList.add('show');
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        function showSyncIndicator() {
+            syncIndicator.classList.remove('opacity-0');
+            syncIndicator.classList.add('opacity-100');
+        }
+
+        function hideSyncIndicator() {
+            syncIndicator.classList.remove('opacity-100');
+            syncIndicator.classList.add('opacity-0');
+        }
+
+        function updateConnectionStatus(online) {
+            const statusDiv = connectionStatus.querySelector('div');
+            if (online) {
+                statusDiv.className = 'flex items-center bg-green-500 text-white px-3 py-1 rounded-full text-sm';
+                statusDiv.innerHTML = '<i class="fas fa-wifi mr-2"></i><span>Online</span>';
+            } else {
+                statusDiv.className = 'flex items-center bg-red-500 text-white px-3 py-1 rounded-full text-sm';
+                statusDiv.innerHTML = '<i class="fas fa-wifi-slash mr-2"></i><span>Offline</span>';
+            }
+        }
+
+        // Gestione stanze recenti
+        function saveRecentRoom(roomCode, roomName) {
+            const recent = JSON.parse(localStorage.getItem('ezio-lino-recent-rooms') || '[]');
+            const existing = recent.findIndex(r => r.code === roomCode);
+            
+            if (existing !== -1) {
+                recent.splice(existing, 1);
             }
             
-            initializeApp() {
-                // Imposta la data di oggi come default
-                const today = new Date().toISOString().split('T')[0];
-                document.getElementById('expenseDate').value = today;
-                
-                // Gestione split personalizzato
-                document.querySelectorAll('input[name="splitType"]').forEach(radio => {
-                    radio.addEventListener('change', this.handleSplitTypeChange.bind(this));
-                });
+            recent.unshift({ code: roomCode, name: roomName, timestamp: Date.now() });
+            
+            if (recent.length > 5) {
+                recent.pop();
             }
             
-            bindEvents() {
-                // Eventi stanza
-                document.getElementById('createRoomBtn').addEventListener('click', this.createRoom.bind(this));
-                document.getElementById('joinRoomBtn').addEventListener('click', this.joinRoom.bind(this));
-                document.getElementById('leaveRoomBtn').addEventListener('click', this.leaveRoom.bind(this));
-                
-                // Eventi partecipanti
-                document.getElementById('addParticipantBtn').addEventListener('click', this.addParticipant.bind(this));
-                document.getElementById('participantName').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') this.addParticipant();
-                });
-                
-                // Eventi spese
-                document.getElementById('addExpenseBtn').addEventListener('click', this.addExpense.bind(this));
-                
-                // Eventi export/import
-                document.getElementById('exportBtn').addEventListener('click', () => {
-                    this.storage.exportData();
-                });
-                
-                document.getElementById('importBtn').addEventListener('click', () => {
-                    document.getElementById('importFile').click();
-                });
-                
-                document.getElementById('importFile').addEventListener('change', (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        this.storage.importData(file);
-                    }
-                });
-                
-                // Gestione codice stanza con Enter
-                document.getElementById('roomCode').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') this.joinRoom();
-                });
+            localStorage.setItem('ezio-lino-recent-rooms', JSON.stringify(recent));
+            displayRecentRooms();
+        }
+
+        function displayRecentRooms() {
+            const recent = JSON.parse(localStorage.getItem('ezio-lino-recent-rooms') || '[]');
+            const container = document.getElementById('recentRoomsList');
+            
+            if (recent.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center col-span-full">Nessuna stanza recente</p>';
+                return;
             }
             
-            createRoom() {
-                const roomCode = this.storage.createRoom();
-                this.currentRoom = roomCode;
-                this.roomData = {
-                    code: roomCode,
+            container.innerHTML = recent.map(room => `
+                <div class="bg-gray-50 p-4 rounded-lg border hover:border-blue-300 cursor-pointer transition-colors recent-room-item" 
+                     data-code="${room.code}">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h4 class="font-bold text-gray-800">${room.name}</h4>
+                            <p class="text-sm text-gray-600">${room.code}</p>
+                        </div>
+                        <i class="fas fa-arrow-right text-blue-500"></i>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Aggiungi event listener per le stanze recenti
+            document.querySelectorAll('.recent-room-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const code = item.dataset.code;
+                    roomCode.value = code;
+                    joinRoom(code);
+                });
+            });
+        }
+
+        // Creazione stanza
+        async function createRoom() {
+            const name = roomName.value.trim();
+            if (!name) {
+                showNotification('Inserisci un nome per la stanza', 'error');
+                return;
+            }
+
+            showSyncIndicator();
+            const code = generateRoomCode();
+            
+            try {
+                const roomData = {
+                    name: name,
+                    code: code,
                     participants: [],
                     expenses: [],
-                    created: new Date().toISOString(),
-                    lastModified: new Date().toISOString()
+                    createdAt: Date.now(),
+                    lastUpdated: Date.now()
                 };
+
+                await db.collection('rooms').doc(code).set(roomData);
                 
-                this.showRoomInterface();
-                this.storage.showNotification(`Stanza creata con codice: ${roomCode}`, 'success');
+                currentRoom = code;
+                currentRoomData = roomData;
+                
+                saveRecentRoom(code, name);
+                showRoom();
+                showNotification(`Stanza "${name}" creata con successo!`);
+                
+            } catch (error) {
+                console.error('Errore nella creazione della stanza:', error);
+                showNotification('Errore nella creazione della stanza', 'error');
+            } finally {
+                hideSyncIndicator();
+            }
+        }
+
+        // Accesso alla stanza
+        async function joinRoom(code) {
+            if (!code) {
+                code = roomCode.value.trim().toUpperCase();
             }
             
-            joinRoom() {
-                const roomCode = document.getElementById('roomCode').value.trim().toUpperCase();
+            if (!code) {
+                showNotification('Inserisci il codice della stanza', 'error');
+                return;
+            }
+
+            showSyncIndicator();
+            
+            try {
+                const roomDoc = await db.collection('rooms').doc(code).get();
                 
-                if (!roomCode) {
-                    this.storage.showNotification('Inserisci un codice stanza', 'error');
+                if (!roomDoc.exists) {
+                    showNotification('Stanza non trovata', 'error');
                     return;
                 }
                 
-                const roomData = this.storage.joinRoom(roomCode);
+                const roomData = roomDoc.data();
+                currentRoom = code;
+                currentRoomData = roomData;
                 
-                if (roomData) {
-                    this.currentRoom = roomCode;
-                    this.roomData = roomData;
-                    this.showRoomInterface();
-                    this.storage.showNotification(`Connesso alla stanza: ${roomCode}`, 'success');
-                } else {
-                    this.storage.showNotification('Stanza non trovata', 'error');
+                saveRecentRoom(code, roomData.name);
+                showRoom();
+                startRoomListener();
+                showNotification(`Accesso alla stanza "${roomData.name}" completato!`);
+                
+            } catch (error) {
+                console.error('Errore nell\'accesso alla stanza:', error);
+                showNotification('Errore nell\'accesso alla stanza', 'error');
+            } finally {
+                hideSyncIndicator();
+            }
+        }
+
+        // Visualizzazione stanza
+        function showRoom() {
+            roomSelection.classList.add('hidden');
+            mainInterface.classList.remove('hidden');
+            document.getElementById('floatingAction').classList.remove('hidden');
+            
+            currentRoomName.textContent = currentRoomData.name;
+            currentRoomCode.textContent = currentRoomData.code;
+            
+            // Imposta la data di oggi come default
+            expenseDate.value = new Date().toISOString().split('T')[0];
+            
+            updateParticipantsList();
+            updateExpensesList();
+            updateBalanceAndRefunds();
+        }
+
+        // Listener per la stanza
+        function startRoomListener() {
+            if (roomListener) {
+                roomListener();
+            }
+            
+            roomListener = db.collection('rooms').doc(currentRoom).onSnapshot(doc => {
+                if (doc.exists) {
+                    currentRoomData = doc.data();
+                    updateParticipantsList();
+                    updateExpensesList();
+                    updateBalanceAndRefunds();
                 }
+            });
+        }
+
+        // Gestione partecipanti
+        async function addParticipant() {
+            const name = participantName.value.trim();
+            if (!name) {
+                showNotification('Inserisci il nome del partecipante', 'error');
+                return;
             }
-            
-            leaveRoom() {
-                this.currentRoom = null;
-                this.roomData = null;
-                this.hideRoomInterface();
-                document.getElementById('roomCode').value = '';
-                this.storage.showNotification('Disconnesso dalla stanza', 'info');
+
+            if (currentRoomData.participants.includes(name)) {
+                showNotification('Partecipante già presente', 'error');
+                return;
             }
+
+            showSyncIndicator();
             
-            showRoomInterface() {
-                document.getElementById('roomInfo').classList.remove('hidden');
-                document.getElementById('currentRoom').textContent = this.currentRoom;
+            try {
+                const updatedParticipants = [...currentRoomData.participants, name];
+                await db.collection('rooms').doc(currentRoom).update({
+                    participants: updatedParticipants,
+                    lastUpdated: Date.now()
+                });
                 
-                // Mostra tutte le sezioni
-                document.getElementById('participantsSection').classList.remove('hidden');
-                document.getElementById('expenseSection').classList.remove('hidden');
-                document.getElementById('expensesListSection').classList.remove('hidden');
-                document.getElementById('balanceSection').classList.remove('hidden');
-                document.getElementById('reimbursementSection').classList.remove('hidden');
+                participantName.value = '';
+                showNotification(`${name} aggiunto con successo!`);
                 
-                this.updateInterface();
+            } catch (error) {
+                console.error('Errore nell\'aggiunta del partecipante:', error);
+                showNotification('Errore nell\'aggiunta del partecipante', 'error');
+            } finally {
+                hideSyncIndicator();
             }
+        }
+
+        function updateParticipantsList() {
+            const participants = currentRoomData.participants || [];
             
-            hideRoomInterface() {
-                document.getElementById('roomInfo').classList.add('hidden');
+            // Aggiorna lista partecipanti
+            participantsList.innerHTML = participants.map(participant => `
+                <span class="bg-blue-100 text-blue-800 px-4 py-2 rounded-full flex items-center">
+                    <i class="fas fa-user mr-2"></i>
+                    ${participant}
+                    <button class="ml-2 text-red-500 hover:text-red-700" onclick="removeParticipant('${participant}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </span>
+            `).join('');
+            
+            // Aggiorna select del pagatore
+            expensePayer.innerHTML = '<option value="">Chi ha pagato?</option>' + 
+                participants.map(p => `<option value="${p}">${p}</option>`).join('');
+            
+            // Aggiorna checkbox per la divisione
+            participantCheckboxes.innerHTML = participants.map(p => `
+                <label class="flex items-center">
+                    <input type="checkbox" name="participants" value="${p}" class="mr-2">
+                    ${p}
+                </label>
+            `).join('');
+        }
+
+        async function removeParticipant(name) {
+            if (!confirm(`Rimuovere ${name} dalla stanza?`)) return;
+
+            showSyncIndicator();
+            
+            try {
+                const updatedParticipants = currentRoomData.participants.filter(p => p !== name);
+                await db.collection('rooms').doc(currentRoom).update({
+                    participants: updatedParticipants,
+                    lastUpdated: Date.now()
+                });
                 
-                // Nascondi tutte le sezioni
-                document.getElementById('participantsSection').classList.add('hidden');
-                document.getElementById('expenseSection').classList.add('hidden');
-                document.getElementById('expensesListSection').classList.add('hidden');
-                document.getElementById('balanceSection').classList.add('hidden');
-                document.getElementById('reimbursementSection').classList.add('hidden');
+                showNotification(`${name} rimosso con successo!`);
+                
+            } catch (error) {
+                console.error('Errore nella rimozione del partecipante:', error);
+                showNotification('Errore nella rimozione del partecipante', 'error');
+            } finally {
+                hideSyncIndicator();
             }
+        }
+
+        // Gestione spese
+        async function addExpense(e) {
+            e.preventDefault();
             
-            addParticipant() {
-                const name = document.getElementById('participantName').value.trim();
+            const date = expenseDate.value;
+            const amount = parseFloat(expenseAmount.value);
+            const description = expenseDescription.value.trim();
+            const payer = expensePayer.value;
+            
+            if (!date || !amount || !description || !payer) {
+                showNotification('Completa tutti i campi', 'error');
+                return;
+            }
+
+            let involvedParticipants;
+            if (splitAll.checked) {
+                involvedParticipants = currentRoomData.participants;
+            } else {
+                involvedParticipants = Array.from(document.querySelectorAll('input[name="participants"]:checked'))
+                    .map(cb => cb.value);
                 
-                if (!name) {
-                    this.storage.showNotification('Inserisci un nome', 'error');
+                if (involvedParticipants.length === 0) {
+                    showNotification('Seleziona almeno un partecipante', 'error');
                     return;
                 }
-                
-                if (this.roomData.participants.includes(name)) {
-                    this.storage.showNotification('Partecipante già presente', 'error');
-                    return;
-                }
-                
-                this.roomData.participants.push(name);
-                this.saveRoomData();
-                this.updateInterface();
-                
-                document.getElementById('participantName').value = '';
-                this.storage.showNotification(`${name} aggiunto ai partecipanti`, 'success');
             }
+
+            showSyncIndicator();
             
-            removeParticipant(name) {
-                if (confirm(`Rimuovere ${name} dai partecipanti?`)) {
-                    this.roomData.participants = this.roomData.participants.filter(p => p !== name);
-                    this.saveRoomData();
-                    this.updateInterface();
-                    this.storage.showNotification(`${name} rimosso dai partecipanti`, 'info');
-                }
-            }
-            
-            addExpense() {
-                const date = document.getElementById('expenseDate').value;
-                const amount = parseFloat(document.getElementById('expenseAmount').value);
-                const description = document.getElementById('expenseDescription').value.trim();
-                const payer = document.getElementById('expensePayer').value;
-                const splitType = document.querySelector('input[name="splitType"]:checked').value;
-                
-                if (!date || !amount || !description || !payer) {
-                    this.storage.showNotification('Compila tutti i campi', 'error');
-                    return;
-                }
-                
-                if (amount <= 0) {
-                    this.storage.showNotification('L\'importo deve essere positivo', 'error');
-                    return;
-                }
-                
-                let participants = [];
-                if (splitType === 'all') {
-                    participants = [...this.roomData.participants];
-                } else {
-                    participants = Array.from(document.querySelectorAll('#customSplitList input:checked'))
-                        .map(checkbox => checkbox.value);
-                }
-                
-                if (participants.length === 0) {
-                    this.storage.showNotification('Seleziona almeno un partecipante', 'error');
-                    return;
-                }
-                
+            try {
                 const expense = {
                     id: Date.now(),
-                    date,
-                    amount,
-                    description,
-                    payer,
-                    participants,
-                    timestamp: new Date().toISOString()
+                    date: date,
+                    amount: amount,
+                    description: description,
+                    payer: payer,
+                    participants: involvedParticipants,
+                    createdAt: Date.now()
                 };
-                
-                this.roomData.expenses.push(expense);
-                this.saveRoomData();
-                this.updateInterface();
+
+                const updatedExpenses = [...(currentRoomData.expenses || []), expense];
+                await db.collection('rooms').doc(currentRoom).update({
+                    expenses: updatedExpenses,
+                    lastUpdated: Date.now()
+                });
                 
                 // Reset form
-                document.getElementById('expenseAmount').value = '';
-                document.getElementById('expenseDescription').value = '';
-                document.getElementById('expensePayer').value = '';
-                document.querySelector('input[name="splitType"][value="all"]').checked = true;
-                this.handleSplitTypeChange();
+                expenseForm.reset();
+                expenseDate.value = new Date().toISOString().split('T')[0];
+                splitAll.checked = true;
+                participantSelection.classList.add('hidden');
                 
-                this.storage.showNotification('Spesa aggiunta con successo', 'success');
-            }
-            
-            removeExpense(expenseId) {
-                if (confirm('Rimuovere questa spesa?')) {
-                    this.roomData.expenses = this.roomData.expenses.filter(e => e.id !== expenseId);
-                    this.saveRoomData();
-                    this.updateInterface();
-                    this.storage.showNotification('Spesa rimossa', 'info');
-                }
-            }
-            
-            handleSplitTypeChange() {
-                const splitType = document.querySelector('input[name="splitType"]:checked').value;
-                const customSection = document.getElementById('customSplitSection');
+                showNotification('Spesa aggiunta con successo!');
                 
-                if (splitType === 'custom') {
-                    customSection.classList.remove('hidden');
-                    this.updateCustomSplitList();
-                } else {
-                    customSection.classList.add('hidden');
-                }
-            }
-            
-            updateCustomSplitList() {
-                const container = document.getElementById('customSplitList');
-                container.innerHTML = '';
-                
-                this.roomData.participants.forEach(participant => {
-                    const div = document.createElement('div');
-                    div.className = 'flex items-center';
-                    div.innerHTML = `
-                        <input type="checkbox" value="${participant}" id="split_${participant}" class="mr-2">
-                        <label for="split_${participant}" class="text-sm">${participant}</label>
-                    `;
-                    container.appendChild(div);
-                });
-            }
-            
-            saveRoomData() {
-                this.roomData.lastModified = new Date().toISOString();
-                this.storage.saveRoomData(this.currentRoom, this.roomData);
-            }
-            
-            updateInterface() {
-                this.updateParticipantsList();
-                this.updateExpensesList();
-                this.updateBalances();
-                this.updateReimbursements();
-                this.updateExpenseForm();
-            }
-            
-            updateParticipantsList() {
-                const container = document.getElementById('participantsList');
-                container.innerHTML = '';
-                
-                this.roomData.participants.forEach(participant => {
-                    const div = document.createElement('div');
-                    div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg fade-in';
-                    div.innerHTML = `
-                        <span class="font-medium">${participant}</span>
-                        <button onclick="app.removeParticipant('${participant}')" class="text-red-500 hover:text-red-700">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    `;
-                    container.appendChild(div);
-                });
-            }
-            
-            updateExpensesList() {
-                const container = document.getElementById('expensesList');
-                container.innerHTML = '';
-                
-                this.roomData.expenses.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(expense => {
-                    const div = document.createElement('div');
-                    div.className = 'expense-card p-4 bg-gray-50 rounded-lg fade-in';
-                    div.innerHTML = `
-                        <div class="flex items-start justify-between">
-                            <div class="flex-1">
-                                <div class="flex items-center mb-2">
-                                    <span class="font-medium text-lg">€${expense.amount.toFixed(2)}</span>
-                                    <span class="ml-2 text-gray-600">${expense.description}</span>
-                                </div>
-                                <div class="text-sm text-gray-500">
-                                    <i class="fas fa-calendar mr-1"></i>${new Date(expense.date).toLocaleDateString()}
-                                    <i class="fas fa-user ml-3 mr-1"></i>Pagato da ${expense.payer}
-                                </div>
-                                <div class="text-sm text-gray-500 mt-1">
-                                    <i class="fas fa-users mr-1"></i>Diviso tra: ${expense.participants.join(', ')}
-                                </div>
-                            </div>
-                            <button onclick="app.removeExpense(${expense.id})" class="text-red-500 hover:text-red-700 ml-4">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    `;
-                    container.appendChild(div);
-                });
-                
-                if (this.roomData.expenses.length === 0) {
-                    container.innerHTML = '<p class="text-gray-500 text-center py-8">Nessuna spesa registrata</p>';
-                }
-            }
-            
-            updateBalances() {
-                const balances = this.calculateBalances();
-                const container = document.getElementById('balancesList');
-                container.innerHTML = '';
-                
-                Object.entries(balances).forEach(([participant, balance]) => {
-                    const div = document.createElement('div');
-                    div.className = 'p-4 bg-gray-50 rounded-lg fade-in';
-                    
-                    const balanceClass = balance > 0 ? 'balance-positive' : balance < 0 ? 'balance-negative' : 'text-gray-600';
-                    const icon = balance > 0 ? 'fas fa-arrow-up' : balance < 0 ? 'fas fa-arrow-down' : 'fas fa-check';
-                    
-                    div.innerHTML = `
-                        <div class="flex items-center justify-between">
-                            <span class="font-medium">${participant}</span>
-                            <div class="flex items-center ${balanceClass}">
-                                <i class="${icon} mr-2"></i>
-                                <span class="font-bold">€${Math.abs(balance).toFixed(2)}</span>
-                            </div>
-                        </div>
-                        <div class="text-sm text-gray-500 mt-1">
-                            ${balance > 0 ? 'Da ricevere' : balance < 0 ? 'Da pagare' : 'In pari'}
-                        </div>
-                    `;
-                    container.appendChild(div);
-                });
-            }
-            
-            updateReimbursements() {
-                const reimbursements = this.calculateReimbursements();
-                const container = document.getElementById('reimbursementsList');
-                container.innerHTML = '';
-                
-                if (reimbursements.length === 0) {
-                    container.innerHTML = '<p class="text-center text-gray-500 py-8">Nessun rimborso necessario - tutti in pari!</p>';
-                    return;
-                }
-                
-                reimbursements.forEach(reimbursement => {
-                    const div = document.createElement('div');
-                    div.className = 'p-4 bg-blue-50 border border-blue-200 rounded-lg fade-in';
-                    div.innerHTML = `
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center">
-                                <i class="fas fa-exchange-alt text-blue-600 mr-3"></i>
-                                <span class="font-medium">${reimbursement.from}</span>
-                                <i class="fas fa-arrow-right text-gray-400 mx-2"></i>
-                                <span class="font-medium">${reimbursement.to}</span>
-                            </div>
-                            <span class="font-bold text-blue-600">€${reimbursement.amount.toFixed(2)}</span>
-                        </div>
-                    `;
-                    container.appendChild(div);
-                });
-            }
-            
-            updateExpenseForm() {
-                const payerSelect = document.getElementById('expensePayer');
-                payerSelect.innerHTML = '<option value="">Seleziona chi ha pagato</option>';
-                
-                this.roomData.participants.forEach(participant => {
-                    const option = document.createElement('option');
-                    option.value = participant;
-                    option.textContent = participant;
-                    payerSelect.appendChild(option);
-                });
-                
-                this.updateCustomSplitList();
-            }
-            
-            calculateBalances() {
-                const balances = {};
-                
-                // Inizializza i bilanci
-                this.roomData.participants.forEach(participant => {
-                    balances[participant] = 0;
-                });
-                
-                // Calcola i bilanci per ogni spesa
-                this.roomData.expenses.forEach(expense => {
-                    const shareAmount = expense.amount / expense.participants.length;
-                    
-                    // Chi ha pagato riceve credito
-                    balances[expense.payer] += expense.amount;
-                    
-                    // Chi deve pagare riceve debito
-                    expense.participants.forEach(participant => {
-                        balances[participant] -= shareAmount;
-                    });
-                });
-                
-                return balances;
-            }
-            
-            calculateReimbursements() {
-                const balances = this.calculateBalances();
-                const reimbursements = [];
-                
-                const debtors = Object.entries(balances).filter(([_, balance]) => balance < 0);
-                const creditors = Object.entries(balances).filter(([_, balance]) => balance > 0);
-                
-                debtors.forEach(([debtor, debtAmount]) => {
-                    let remainingDebt = Math.abs(debtAmount);
-                    
-                    creditors.forEach(([creditor, creditAmount]) => {
-                        if (remainingDebt > 0 && creditAmount > 0) {
-                            const transferAmount = Math.min(remainingDebt, creditAmount);
-                            
-                            reimbursements.push({
-                                from: debtor,
-                                to: creditor,
-                                amount: transferAmount
-                            });
-                            
-                            remainingDebt -= transferAmount;
-                            balances[creditor] -= transferAmount;
-                        }
-                    });
-                });
-                
-                return reimbursements;
+            } catch (error) {
+                console.error('Errore nell\'aggiunta della spesa:', error);
+                showNotification('Errore nell\'aggiunta della spesa', 'error');
+            } finally {
+                hideSyncIndicator();
             }
         }
-        
-        // Inizializza l'applicazione
-        let app;
-        document.addEventListener('DOMContentLoaded', () => {
-            app = new ExpenseTracker();
+
+        function updateExpensesList() {
+            const expenses = currentRoomData.expenses || [];
+            
+            if (expenses.length === 0) {
+                expensesList.innerHTML = '<p class="text-gray-500 text-center">Nessuna spesa registrata</p>';
+                return;
+            }
+            
+            // Ordina le spese per data (più recenti prima)
+            expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            expensesList.innerHTML = expenses.map(expense => `
+                <div class="expense-item bg-gray-50 p-4 rounded-lg">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-1">
+                                <i class="fas fa-calendar-alt text-gray-500"></i>
+                                <span class="text-sm text-gray-600">${new Date(expense.date).toLocaleDateString('it-IT')}</span>
+                                <span class="text-lg font-bold text-green-600">€${expense.amount.toFixed(2)}</span>
+                            </div>
+                            <h4 class="font-bold text-gray-800">${expense.description}</h4>
+                            <p class="text-sm text-gray-600 mt-1">
+                                <i class="fas fa-user mr-1"></i>
+                                Pagato da: <strong>${expense.payer}</strong>
+                            </p>
+                            <p class="text-sm text-gray-600">
+                                <i class="fas fa-users mr-1"></i>
+                                Diviso tra: ${expense.participants.join(', ')}
+                            </p>
+                        </div>
+                        <button class="text-red-500 hover:text-red-700 ml-4" onclick="removeExpense(${expense.id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function removeExpense(expenseId) {
+            if (!confirm('Rimuovere questa spesa?')) return;
+
+            showSyncIndicator();
+            
+            try {
+                const updatedExpenses = currentRoomData.expenses.filter(e => e.id !== expenseId);
+                await db.collection('rooms').doc(currentRoom).update({
+                    expenses: updatedExpenses,
+                    lastUpdated: Date.now()
+                });
+                
+                showNotification('Spesa rimossa con successo!');
+                
+            } catch (error) {
+                console.error('Errore nella rimozione della spesa:', error);
+                showNotification('Errore nella rimozione della spesa', 'error');
+            } finally {
+                hideSyncIndicator();
+            }
+        }
+
+        // Calcolo bilancio e rimborsi
+        function updateBalanceAndRefunds() {
+            const participants = currentRoomData.participants || [];
+            const expenses = currentRoomData.expenses || [];
+            
+            if (participants.length === 0) {
+                balanceList.innerHTML = '<p class="text-gray-500">Nessun partecipante</p>';
+                refundsList.innerHTML = '<p class="text-gray-500">Nessun rimborso necessario</p>';
+                return;
+            }
+            
+            // Calcola bilancio per ogni partecipante
+            const balances = {};
+            participants.forEach(p => balances[p] = 0);
+            
+            expenses.forEach(expense => {
+                const costPerPerson = expense.amount / expense.participants.length;
+                
+                // Il pagatore ha speso per tutti
+                balances[expense.payer] += expense.amount;
+                
+                // Ogni partecipante deve la sua quota
+                expense.participants.forEach(participant => {
+                    balances[participant] -= costPerPerson;
+                });
+            });
+            
+            // Mostra bilancio individuale
+            balanceList.innerHTML = participants.map(participant => {
+                const balance = balances[participant];
+                const balanceClass = balance > 0 ? 'balance-positive' : balance < 0 ? 'balance-negative' : 'balance-zero';
+                const icon = balance > 0 ? 'fa-plus' : balance < 0 ? 'fa-minus' : 'fa-equals';
+                
+                return `
+                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <span class="font-medium">${participant}</span>
+                        <span class="${balanceClass} font-bold">
+                            <i class="fas ${icon} mr-1"></i>
+                            €${Math.abs(balance).toFixed(2)}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+            
+            // Calcola rimborsi ottimizzati
+            const refunds = calculateOptimalRefunds(balances);
+            
+            if (refunds.length === 0) {
+                refundsList.innerHTML = '<p class="text-green-600 font-medium"><i class="fas fa-check mr-2"></i>Tutto a posto! Nessun rimborso necessario.</p>';
+            } else {
+                refundsList.innerHTML = refunds.map(refund => `
+                    <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <i class="fas fa-arrow-right text-yellow-600 mr-2"></i>
+                                <strong>${refund.from}</strong> deve pagare <strong>${refund.to}</strong>
+                            </div>
+                            <span class="text-xl font-bold text-yellow-600">€${refund.amount.toFixed(2)}</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function calculateOptimalRefunds(balances) {
+            const refunds = [];
+            const debtors = [];
+            const creditors = [];
+            
+            // Separa debitori e creditori
+            Object.entries(balances).forEach(([person, balance]) => {
+                if (balance > 0.01) {
+                    creditors.push({ person, amount: balance });
+                } else if (balance < -0.01) {
+                    debtors.push({ person, amount: -balance });
+                }
+            });
+            
+            // Ordina per importo (dal più grande al più piccolo)
+            creditors.sort((a, b) => b.amount - a.amount);
+            debtors.sort((a, b) => b.amount - a.amount);
+            
+            // Calcola rimborsi ottimali
+            let i = 0, j = 0;
+            while (i < creditors.length && j < debtors.length) {
+                const creditor = creditors[i];
+                const debtor = debtors[j];
+                
+                const amount = Math.min(creditor.amount, debtor.amount);
+                
+                if (amount > 0.01) {
+                    refunds.push({
+                        from: debtor.person,
+                        to: creditor.person,
+                        amount: amount
+                    });
+                }
+                
+                creditor.amount -= amount;
+                debtor.amount -= amount;
+                
+                if (creditor.amount <= 0.01) i++;
+                if (debtor.amount <= 0.01) j++;
+            }
+            
+            return refunds;
+        }
+
+        // Funzioni di utilità
+        function leaveRoom() {
+            if (confirm('Sei sicuro di voler uscire dalla stanza?')) {
+                if (roomListener) {
+                    roomListener();
+                    roomListener = null;
+                }
+                
+                currentRoom = null;
+                currentRoomData = null;
+                
+                roomSelection.classList.remove('hidden');
+                mainInterface.classList.add('hidden');
+                document.getElementById('floatingAction').classList.add('hidden');
+                
+                showNotification('Hai lasciato la stanza');
+            }
+        }
+
+        function shareRoom() {
+            if (navigator.share) {
+                navigator.share({
+                    title: `Stanza ${currentRoomData.name}`,
+                    text: `Accedi alla stanza delle spese condivise "${currentRoomData.name}" con il codice: ${currentRoom}`,
+                    url: window.location.href
+                });
+            } else {
+                // Fallback per browser che non supportano Web Share API
+                const shareText = `Accedi alla stanza delle spese condivise "${currentRoomData.name}" con il codice: ${currentRoom}\n\nLink: ${window.location.href}`;
+                navigator.clipboard.writeText(shareText).then(() => {
+                    showNotification('Link copiato negli appunti!');
+                }).catch(() => {
+                    showNotification('Codice stanza: ' + currentRoom, 'info');
+                });
+            }
+        }
+
+        function exportData() {
+            const data = {
+                room: currentRoomData,
+                exportDate: new Date().toISOString(),
+                totalExpenses: currentRoomData.expenses?.length || 0,
+                totalAmount: currentRoomData.expenses?.reduce((sum, e) => sum + e.amount, 0) || 0
+            };
+            
+            const dataStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ezio-lino-${currentRoom}-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            
+            URL.revokeObjectURL(url);
+            showNotification('Dati esportati con successo!');
+        }
+
+        // Event Listeners
+        createRoomBtn.addEventListener('click', createRoom);
+        joinRoomBtn.addEventListener('click', () => joinRoom());
+        addParticipantBtn.addEventListener('click', addParticipant);
+        expenseForm.addEventListener('submit', addExpense);
+        leaveRoomBtn.addEventListener('click', leaveRoom);
+        shareRoomBtn.addEventListener('click', shareRoom);
+        exportDataBtn.addEventListener('click', exportData);
+
+        // Gestione della divisione delle spese
+        splitAll.addEventListener('change', function() {
+            if (this.checked) {
+                participantSelection.classList.add('hidden');
+            } else {
+                participantSelection.classList.remove('hidden');
+            }
+        });
+
+        // Gestione tasti rapidi
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 'Enter' && !mainInterface.classList.contains('hidden')) {
+                    e.preventDefault();
+                    document.getElementById('quickAddBtn').click();
+                }
+            }
+        });
+
+        // Quick add button
+        document.getElementById('quickAddBtn').addEventListener('click', function() {
+            expenseAmount.focus();
+        });
+
+        // Gestione connessione
+        window.addEventListener('online', () => updateConnectionStatus(true));
+        window.addEventListener('offline', () => updateConnectionStatus(false));
+
+        // Inizializzazione
+        document.addEventListener('DOMContentLoaded', function() {
+            updateConnectionStatus(navigator.onLine);
+            displayRecentRooms();
+            
+            // Auto-focus sul campo nome stanza
+            roomName.focus();
+        });
+
+        // Gestione enter per i campi input
+        roomName.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                createRoom();
+            }
+        });
+
+        roomCode.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                joinRoom();
+            }
+        });
+
+        participantName.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addParticipant();
+            }
+        });
+
+        // Auto-maiuscolo per il codice stanza
+        roomCode.addEventListener('input', function() {
+            this.value = this.value.toUpperCase();
         });
     </script>
 </body>
 </html>
     <script id="html_badge_script1">
         window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
-            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDnPWPMiWgCz0cjLwXuAiKD0zEhk38Gz4lEMI%2FKGZTuN6mszV8Sx3pvbuiJOkOeFi4ppEyDv%2FCXHY0F3fxz5g%2FAuRDlMWI8Ml1vaoRqUWsb7u%2BZhADrkds0SgoNPZ8qKSrp67RLelNLibW%2BuJI1sAzw%2FsxlZNNIljoi3V2T%2BHqFmKfxte99ZO%2BBH8QbTGf0niA2Ny1OR3pSgo5ZfzOfFdqOHAGD27hBRTs5yrBVP%2F17emcAkOIY9%2BMm89c%2Fez9OKpgRPErZspOKLgrrnH7BeS81FxL1vXONMtc9cAXWgjZBGbm%2F641qzjt2CwuKy09eaJIpYbdEVkLY8OvIpw6rom0dR0JsnWCVSYNBtbmhDFZDBSmrsv3Oei%2B5zQ%2BOiMnRWZ1fOjA98b4XwLalEpSbBW6VhU3Fuz0wWO2pTyo%2FItLbZyfsI0U8JTWdO8HVjkfDIQvpClEdolSpFH5ZRN0A04v6e6WRMF%2BSkvvSc7DqW0OgpUIRNxZW0EoN6eSrPI6UJOsQ%3D%3D";
+            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDqu6WnqVCic99vsJyNuKwFQdggHVf1j561YSZgnNacHRGMt6KWaFhSim9S1apqMeuShPN9GHdEr9ebQWDNjs2vh8FZ87Qj0bXf0yY%2F3EGZl7n1alSiyyNZ7KXHfhes%2BsFVOikkg9fNZmhAca6%2Fhj9nlD4uJsILQJz%2FggryX6apE6gYamiUMrcZLk1RfMg8DpKBeCBDYi3ez%2B5y%2BLgY1Hm5oM%2B4CrCSDgdY2nZAzXVOyU%2FN3mjt72DB%2FBrY0z%2BF1kCSQbmtfSJQNCo5oLOMwy5jQc3srTzVxc1jZX%2FP2vF6St3pYVazfd8hMn3g1t1Y%2FgSnJ5nqPLviQXGq%2FdP5X%2FLfnnDFroPUXKpOWBwtijhahu44EW7nYNm3HHmKvx2mzxVDilJMsngqsXuAHxRm6phMNfAEglSNdHKRnIapOz9l3iCH3jcHB%2B9oA4RVteupgmfgCGcMWz%2BtLLh31rQbo%2FI%2B4VmMxSfejEdUH6pRAMDGPlUHhSeqq7HltwuPVGFouDCA%3D%3D";
         window.__genspark_locale = "it-IT";
-        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDnPWPMiWgCz0cjLwXuAiKD0zEhk38Gz4lEMI/KGZTuN6mszV8Sx3pvbuiJOkOeFi4ppEyDv/CXHY0F3fxz5g/AuRDlMWI8Ml1vaoRqUWsb7u+ZhADrkds0SgoNPZ8qKSrp67RLelNLibW+uJI1sAzw/sxlZNNIljoi3V2T+HqFmKfxte99ZO+BH8QbTGf0niA2Ny1OR3pSgo5ZfzOfFdqOHAGD27hBRTs5yrBVP/17emcAkOIY9+Mm89c/ez9OKpgRPErZspOKLgrrnH7BeS81FxL1vXONMtc9cAXWgjZBGbm/641qzjt2CwuKy09eaJIpYbdEVkLY8OvIpw6rom0dR0JsnWCVSYNBtbmhDFZDBSmrsv3Oei+5zQ+OiMnRWZ1fOjA98b4XwLalEpSbBW6VhU3Fuz0wWO2pTyo/ItLbZyfsI0U8JTWdO8HVjkfDIQvpClEdolSpFH5ZRN0A04v6e6WRMF+SkvvSc7DqW0OgpUIRNxZW0EoN6eSrPI6UJOsQ==";
+        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDqu6WnqVCic99vsJyNuKwFQdggHVf1j561YSZgnNacHRGMt6KWaFhSim9S1apqMeuShPN9GHdEr9ebQWDNjs2vh8FZ87Qj0bXf0yY/3EGZl7n1alSiyyNZ7KXHfhes+sFVOikkg9fNZmhAca6/hj9nlD4uJsILQJz/ggryX6apE6gYamiUMrcZLk1RfMg8DpKBeCBDYi3ez+5y+LgY1Hm5oM+4CrCSDgdY2nZAzXVOyU/N3mjt72DB/BrY0z+F1kCSQbmtfSJQNCo5oLOMwy5jQc3srTzVxc1jZX/P2vF6St3pYVazfd8hMn3g1t1Y/gSnJ5nqPLviQXGq/dP5X/LfnnDFroPUXKpOWBwtijhahu44EW7nYNm3HHmKvx2mzxVDilJMsngqsXuAHxRm6phMNfAEglSNdHKRnIapOz9l3iCH3jcHB+9oA4RVteupgmfgCGcMWz+tLLh31rQbo/I+4VmMxSfejEdUH6pRAMDGPlUHhSeqq7HltwuPVGFouDCA==";
     </script>
     
     <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
