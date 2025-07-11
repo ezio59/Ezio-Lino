@@ -6,57 +6,37 @@
     <title>Ezio/Lino - Gestore Spese Condivise</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
         .card {
-            backdrop-filter: blur(10px);
             background: rgba(255, 255, 255, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         }
-        .floating-action {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: all 0.3s ease;
         }
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1001;
-            transform: translateX(100%);
-            transition: transform 0.3s ease;
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
         }
-        .notification.show {
-            transform: translateX(0);
-        }
-        .pulse {
+        .connection-status {
             animation: pulse 2s infinite;
         }
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
-        .room-code {
-            font-family: 'Courier New', monospace;
-            font-size: 1.5rem;
-            letter-spacing: 0.2rem;
-            background: linear-gradient(45deg, #4338ca, #7c3aed);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
         .expense-item {
             transition: all 0.3s ease;
-            border-left: 4px solid transparent;
         }
         .expense-item:hover {
-            border-left-color: #667eea;
-            background: rgba(102, 126, 234, 0.05);
+            transform: translateX(4px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
         }
         .balance-positive {
             color: #10b981;
@@ -64,1017 +44,859 @@
         .balance-negative {
             color: #ef4444;
         }
-        .balance-zero {
-            color: #6b7280;
-        }
-        .loading-spinner {
-            width: 20px;
-            height: 20px;
-            border: 2px solid #f3f4f6;
-            border-top: 2px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .sync-indicator {
+        .notification {
             position: fixed;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 20px;
+            right: 20px;
+            padding: 16px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
             z-index: 1000;
-            transition: all 0.3s ease;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
         }
-        .connection-status {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            z-index: 1000;
+        .notification.show {
+            transform: translateX(0);
+        }
+        .notification.success {
+            background: #10b981;
+        }
+        .notification.error {
+            background: #ef4444;
+        }
+        .notification.info {
+            background: #3b82f6;
         }
     </style>
 </head>
-<body class="gradient-bg min-h-screen">
-    <!-- Indicatore di connessione -->
-    <div id="connectionStatus" class="connection-status">
-        <div class="flex items-center bg-green-500 text-white px-3 py-1 rounded-full text-sm">
-            <i class="fas fa-wifi mr-2"></i>
-            <span>Online</span>
-        </div>
-    </div>
-
-    <!-- Indicatore di sincronizzazione -->
-    <div id="syncIndicator" class="sync-indicator opacity-0">
-        <div class="bg-blue-500 text-white px-4 py-2 rounded-full text-sm flex items-center">
-            <div class="loading-spinner mr-2"></div>
-            Sincronizzazione in corso...
-        </div>
-    </div>
-
-    <!-- Notifiche -->
-    <div id="notification" class="notification">
-        <div class="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg">
-            <i class="fas fa-check mr-2"></i>
-            <span id="notificationText">Operazione completata</span>
-        </div>
-    </div>
-
-    <div class="container mx-auto px-4 py-8">
+<body class="gradient-bg min-h-screen py-8 px-4">
+    <div class="max-w-4xl mx-auto">
         <!-- Header -->
         <div class="text-center mb-8">
-            <h1 class="text-5xl font-bold text-white mb-2">
-                <i class="fas fa-calculator mr-3"></i>
-                Ezio/Lino
+            <h1 class="text-4xl font-bold text-white mb-2">
+                <i class="fas fa-calculator mr-3"></i>Ezio/Lino
             </h1>
-            <p class="text-xl text-white opacity-90">Gestore Spese Condivise</p>
-            <p class="text-sm text-white opacity-75 mt-2">Sincronizzazione multi-dispositivo in tempo reale</p>
+            <p class="text-white text-lg opacity-90">Gestore Spese Condivise</p>
+            <div class="mt-4 flex justify-center items-center space-x-4">
+                <div id="connectionStatus" class="flex items-center text-white">
+                    <i class="fas fa-wifi mr-2"></i>
+                    <span id="statusText">Connessione...</span>
+                </div>
+                <div id="syncStatus" class="flex items-center text-white" style="display: none;">
+                    <i class="fas fa-sync-alt mr-2"></i>
+                    <span>Sincronizzazione...</span>
+                </div>
+            </div>
         </div>
 
-        <!-- Selezione/Creazione Stanza -->
-        <div id="roomSelection" class="card rounded-xl shadow-2xl p-8 mb-8">
-            <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">
-                <i class="fas fa-door-open mr-3 text-blue-600"></i>
-                Accedi alla Stanza
+        <!-- Sezione Stanza -->
+        <div class="card p-6 mb-6">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-home mr-2"></i>Gestione Stanza
             </h2>
             
-            <div class="grid md:grid-cols-2 gap-8">
-                <!-- Crea Nuova Stanza -->
-                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-lg border-2 border-blue-200">
-                    <h3 class="text-xl font-bold text-blue-800 mb-4">
-                        <i class="fas fa-plus-circle mr-2"></i>
-                        Crea Nuova Stanza
-                    </h3>
-                    <input type="text" id="roomName" placeholder="Nome della stanza (es: Vacanze Sicilia)" 
-                           class="w-full p-3 border border-blue-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <button id="createRoomBtn" class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-bold hover:bg-blue-700 transition-colors">
-                        <i class="fas fa-magic mr-2"></i>
-                        Crea Stanza
-                    </button>
-                </div>
-
-                <!-- Accedi a Stanza Esistente -->
-                <div class="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-lg border-2 border-green-200">
-                    <h3 class="text-xl font-bold text-green-800 mb-4">
-                        <i class="fas fa-sign-in-alt mr-2"></i>
-                        Accedi a Stanza Esistente
-                    </h3>
-                    <input type="text" id="roomCode" placeholder="Codice stanza (es: ABC123)" 
-                           class="w-full p-3 border border-green-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-green-500 text-center text-lg tracking-wider">
-                    <button id="joinRoomBtn" class="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-bold hover:bg-green-700 transition-colors">
-                        <i class="fas fa-door-open mr-2"></i>
-                        Accedi alla Stanza
-                    </button>
+            <div id="roomSelection" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Crea Nuova Stanza</label>
+                        <button id="createRoomBtn" class="w-full btn-primary text-white py-3 px-6 rounded-lg font-semibold">
+                            <i class="fas fa-plus mr-2"></i>Crea Stanza
+                        </button>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Accedi a Stanza Esistente</label>
+                        <div class="flex space-x-2">
+                            <input type="text" id="roomCodeInput" placeholder="Codice stanza" 
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                            <button id="joinRoomBtn" class="btn-primary text-white px-6 py-2 rounded-lg font-semibold">
+                                <i class="fas fa-sign-in-alt mr-2"></i>Accedi
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Stanze Recenti -->
-            <div id="recentRooms" class="mt-8">
-                <h3 class="text-xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-history mr-2"></i>
-                    Stanze Recenti
-                </h3>
-                <div id="recentRoomsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <!-- Stanze recenti verranno aggiunte qui -->
+            <div id="roomInfo" class="mt-4 p-4 bg-purple-50 rounded-lg" style="display: none;">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h3 class="font-semibold text-purple-800">Stanza Attiva</h3>
+                        <p class="text-purple-600">Codice: <span id="currentRoomCode" class="font-mono font-bold"></span></p>
+                    </div>
+                    <button id="leaveRoomBtn" class="text-red-600 hover:text-red-800 font-semibold">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Esci
+                    </button>
                 </div>
             </div>
         </div>
 
-        <!-- Interfaccia Principale (nascosta inizialmente) -->
-        <div id="mainInterface" class="hidden">
-            <!-- Info Stanza -->
-            <div class="card rounded-xl shadow-2xl p-6 mb-8">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between">
-                    <div class="mb-4 md:mb-0">
-                        <h2 class="text-2xl font-bold text-gray-800">
-                            <i class="fas fa-users mr-2 text-blue-600"></i>
-                            <span id="currentRoomName">Stanza</span>
-                        </h2>
-                        <p class="text-gray-600 mt-1">
-                            <i class="fas fa-key mr-2"></i>
-                            Codice stanza: <span id="currentRoomCode" class="room-code"></span>
-                        </p>
-                    </div>
-                    <div class="flex gap-2">
-                        <button id="shareRoomBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                            <i class="fas fa-share-alt mr-2"></i>
-                            Condividi
-                        </button>
-                        <button id="exportDataBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
-                            <i class="fas fa-download mr-2"></i>
-                            Esporta
-                        </button>
-                        <button id="leaveRoomBtn" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
-                            <i class="fas fa-sign-out-alt mr-2"></i>
-                            Esci
-                        </button>
+        <!-- Sezione Partecipanti -->
+        <div id="participantsSection" class="card p-6 mb-6" style="display: none;">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-users mr-2"></i>Partecipanti
+            </h2>
+            
+            <div class="flex space-x-2 mb-4">
+                <input type="text" id="participantInput" placeholder="Nome partecipante" 
+                       class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                <button id="addParticipantBtn" class="btn-primary text-white px-6 py-2 rounded-lg font-semibold">
+                    <i class="fas fa-user-plus mr-2"></i>Aggiungi
+                </button>
+            </div>
+
+            <div id="participantsList" class="space-y-2">
+                <!-- Partecipanti dinamici -->
+            </div>
+        </div>
+
+        <!-- Sezione Spese -->
+        <div id="expensesSection" class="card p-6 mb-6" style="display: none;">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-receipt mr-2"></i>Aggiungi Spesa
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Data</label>
+                    <input type="date" id="expenseDate" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Importo (€)</label>
+                    <input type="number" id="expenseAmount" step="0.01" placeholder="0.00" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Descrizione</label>
+                <input type="text" id="expenseDescription" placeholder="Cosa hai pagato?" 
+                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Chi ha pagato?</label>
+                    <select id="expensePayer" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                        <option value="">Seleziona chi ha pagato</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Dividi tra</label>
+                    <div id="expenseParticipants" class="space-y-2">
+                        <!-- Checkboxes dinamici -->
                     </div>
                 </div>
             </div>
 
-            <!-- Gestione Partecipanti -->
-            <div class="card rounded-xl shadow-2xl p-6 mb-8">
-                <h3 class="text-2xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-user-friends mr-2 text-green-600"></i>
-                    Partecipanti
-                </h3>
-                <div class="flex flex-col md:flex-row gap-4 mb-4">
-                    <input type="text" id="participantName" placeholder="Nome partecipante" 
-                           class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-                    <button id="addParticipantBtn" class="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition-colors">
-                        <i class="fas fa-user-plus mr-2"></i>
-                        Aggiungi
-                    </button>
-                </div>
-                <div id="participantsList" class="flex flex-wrap gap-2">
-                    <!-- Partecipanti verranno aggiunti qui -->
-                </div>
-            </div>
+            <button id="addExpenseBtn" class="w-full btn-primary text-white py-3 px-6 rounded-lg font-semibold">
+                <i class="fas fa-plus mr-2"></i>Aggiungi Spesa
+            </button>
+        </div>
 
-            <!-- Aggiunta Spesa -->
-            <div class="card rounded-xl shadow-2xl p-6 mb-8">
-                <h3 class="text-2xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-plus-circle mr-2 text-purple-600"></i>
-                    Aggiungi Spesa
-                </h3>
-                <form id="expenseForm" class="space-y-4">
-                    <div class="grid md:grid-cols-2 gap-4">
-                        <input type="date" id="expenseDate" 
-                               class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
-                        <input type="number" id="expenseAmount" placeholder="Importo (€)" step="0.01" 
-                               class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
-                    </div>
-                    <input type="text" id="expenseDescription" placeholder="Descrizione spesa" 
-                           class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
-                    <div class="grid md:grid-cols-2 gap-4">
-                        <select id="expensePayer" class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
-                            <option value="">Chi ha pagato?</option>
-                        </select>
-                        <div class="flex items-center">
-                            <input type="checkbox" id="splitAll" class="mr-2" checked>
-                            <label for="splitAll" class="text-gray-700">Dividi tra tutti</label>
-                        </div>
-                    </div>
-                    <div id="participantSelection" class="hidden">
-                        <p class="text-sm text-gray-600 mb-2">Seleziona partecipanti coinvolti:</p>
-                        <div id="participantCheckboxes" class="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            <!-- Checkbox partecipanti -->
-                        </div>
-                    </div>
-                    <button type="submit" class="w-full bg-purple-600 text-white py-3 px-6 rounded-lg font-bold hover:bg-purple-700 transition-colors">
-                        <i class="fas fa-save mr-2"></i>
-                        Aggiungi Spesa
-                    </button>
-                </form>
+        <!-- Sezione Spese Registrate -->
+        <div id="expenseListSection" class="card p-6 mb-6" style="display: none;">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-list mr-2"></i>Spese Registrate
+            </h2>
+            
+            <div id="expensesList" class="space-y-3">
+                <!-- Spese dinamiche -->
             </div>
+        </div>
 
-            <!-- Lista Spese -->
-            <div class="card rounded-xl shadow-2xl p-6 mb-8">
-                <h3 class="text-2xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-list mr-2 text-orange-600"></i>
-                    Spese Registrate
-                </h3>
-                <div id="expensesList" class="space-y-3">
-                    <!-- Spese verranno aggiunte qui -->
+        <!-- Sezione Rimborsi -->
+        <div id="balanceSection" class="card p-6 mb-6" style="display: none;">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-balance-scale mr-2"></i>Bilanci e Rimborsi
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-3">Bilanci Individuali</h3>
+                    <div id="balanceList" class="space-y-2">
+                        <!-- Bilanci dinamici -->
+                    </div>
                 </div>
-            </div>
-
-            <!-- Bilancio e Rimborsi -->
-            <div class="card rounded-xl shadow-2xl p-6">
-                <h3 class="text-2xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-balance-scale mr-2 text-red-600"></i>
-                    Bilancio e Rimborsi
-                </h3>
-                <div class="grid md:grid-cols-2 gap-8">
-                    <!-- Bilancio Individuale -->
-                    <div>
-                        <h4 class="text-lg font-bold text-gray-700 mb-3">Bilancio Individuale</h4>
-                        <div id="balanceList" class="space-y-2">
-                            <!-- Bilanci verranno aggiunti qui -->
-                        </div>
-                    </div>
-                    <!-- Rimborsi -->
-                    <div>
-                        <h4 class="text-lg font-bold text-gray-700 mb-3">Rimborsi Necessari</h4>
-                        <div id="refundsList" class="space-y-3">
-                            <!-- Rimborsi verranno aggiunti qui -->
-                        </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-3">Rimborsi Necessari</h3>
+                    <div id="reimbursementList" class="space-y-2">
+                        <!-- Rimborsi dinamici -->
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Sezione Azioni -->
+        <div id="actionsSection" class="card p-6" style="display: none;">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-cogs mr-2"></i>Azioni
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button id="exportBtn" class="btn-primary text-white py-3 px-6 rounded-lg font-semibold">
+                    <i class="fas fa-download mr-2"></i>Esporta Dati
+                </button>
+                <button id="refreshBtn" class="bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg font-semibold">
+                    <i class="fas fa-refresh mr-2"></i>Aggiorna
+                </button>
+                <button id="clearBtn" class="bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-lg font-semibold">
+                    <i class="fas fa-trash mr-2"></i>Reset Stanza
+                </button>
+            </div>
+        </div>
     </div>
 
-    <!-- Bottone Floating Action -->
-    <div id="floatingAction" class="floating-action hidden">
-        <button id="quickAddBtn" class="bg-purple-600 text-white w-16 h-16 rounded-full shadow-lg hover:bg-purple-700 transition-colors">
-            <i class="fas fa-plus text-xl"></i>
-        </button>
-    </div>
+    <div id="notification" class="notification"></div>
 
     <script>
-        // Configurazione Firebase
-        const firebaseConfig = {
-            apiKey: "AIzaSyDummy_Key_For_Demo",
-            authDomain: "ezio-lino-demo.firebaseapp.com",
-            projectId: "ezio-lino-demo",
-            storageBucket: "ezio-lino-demo.appspot.com",
-            messagingSenderId: "123456789",
-            appId: "1:123456789:web:abcdef123456"
-        };
-
-        // Simulazione Firebase per demo (in produzione usare Firebase reale)
-        class MockFirestore {
+        class EzioLinoApp {
             constructor() {
-                this.data = JSON.parse(localStorage.getItem('ezio-lino-cloud-data') || '{}');
-                this.listeners = {};
-            }
-
-            collection(path) {
-                return {
-                    doc: (id) => ({
-                        set: (data) => {
-                            if (!this.data[path]) this.data[path] = {};
-                            this.data[path][id] = { ...data, id };
-                            this.save();
-                            this.notifyListeners(path, id, data);
-                            return Promise.resolve();
-                        },
-                        update: (data) => {
-                            if (!this.data[path]) this.data[path] = {};
-                            this.data[path][id] = { ...this.data[path][id], ...data };
-                            this.save();
-                            this.notifyListeners(path, id, this.data[path][id]);
-                            return Promise.resolve();
-                        },
-                        get: () => {
-                            const doc = this.data[path] ? this.data[path][id] : null;
-                            return Promise.resolve({
-                                exists: !!doc,
-                                data: () => doc
-                            });
-                        },
-                        onSnapshot: (callback) => {
-                            const key = `${path}/${id}`;
-                            this.listeners[key] = callback;
-                            const doc = this.data[path] ? this.data[path][id] : null;
-                            callback({
-                                exists: !!doc,
-                                data: () => doc
-                            });
-                            return () => delete this.listeners[key];
-                        }
-                    })
+                this.currentRoom = null;
+                this.roomData = {
+                    participants: [],
+                    expenses: []
                 };
+                this.binId = null;
+                this.apiKey = 'replace-with-your-api-key'; // Placeholder - in produzione si userebbe una chiave reale
+                this.syncInterval = null;
+                this.isOnline = navigator.onLine;
+                this.pendingActions = [];
+                
+                this.initializeApp();
+                this.setupEventListeners();
+                this.setupConnectionMonitoring();
             }
 
-            save() {
-                localStorage.setItem('ezio-lino-cloud-data', JSON.stringify(this.data));
+            initializeApp() {
+                // Imposta la data di oggi
+                document.getElementById('expenseDate').value = new Date().toISOString().split('T')[0];
+                
+                // Carica dati locali se presenti
+                this.loadLocalData();
+                
+                // Aggiorna stato connessione
+                this.updateConnectionStatus();
             }
 
-            notifyListeners(path, id, data) {
-                const key = `${path}/${id}`;
-                if (this.listeners[key]) {
-                    this.listeners[key]({
-                        exists: true,
-                        data: () => data
-                    });
+            setupEventListeners() {
+                // Gestione stanza
+                document.getElementById('createRoomBtn').addEventListener('click', () => this.createRoom());
+                document.getElementById('joinRoomBtn').addEventListener('click', () => this.joinRoom());
+                document.getElementById('leaveRoomBtn').addEventListener('click', () => this.leaveRoom());
+                
+                // Gestione partecipanti
+                document.getElementById('addParticipantBtn').addEventListener('click', () => this.addParticipant());
+                document.getElementById('participantInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.addParticipant();
+                });
+                
+                // Gestione spese
+                document.getElementById('addExpenseBtn').addEventListener('click', () => this.addExpense());
+                document.getElementById('roomCodeInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.joinRoom();
+                });
+                
+                // Azioni
+                document.getElementById('exportBtn').addEventListener('click', () => this.exportData());
+                document.getElementById('refreshBtn').addEventListener('click', () => this.refreshData());
+                document.getElementById('clearBtn').addEventListener('click', () => this.clearRoom());
+            }
+
+            setupConnectionMonitoring() {
+                window.addEventListener('online', () => {
+                    this.isOnline = true;
+                    this.updateConnectionStatus();
+                    this.processPendingActions();
+                });
+
+                window.addEventListener('offline', () => {
+                    this.isOnline = false;
+                    this.updateConnectionStatus();
+                });
+            }
+
+            updateConnectionStatus() {
+                const statusEl = document.getElementById('statusText');
+                const connectionEl = document.getElementById('connectionStatus');
+                
+                if (this.isOnline) {
+                    statusEl.textContent = 'Connesso';
+                    connectionEl.className = 'flex items-center text-green-300';
+                } else {
+                    statusEl.textContent = 'Offline';
+                    connectionEl.className = 'flex items-center text-red-300';
                 }
             }
-        }
 
-        // Inizializzazione
-        const db = new MockFirestore();
-        
-        // Stato dell'applicazione
-        let currentRoom = null;
-        let currentRoomData = null;
-        let roomListener = null;
-
-        // Elementi DOM
-        const roomSelection = document.getElementById('roomSelection');
-        const mainInterface = document.getElementById('mainInterface');
-        const roomName = document.getElementById('roomName');
-        const roomCode = document.getElementById('roomCode');
-        const createRoomBtn = document.getElementById('createRoomBtn');
-        const joinRoomBtn = document.getElementById('joinRoomBtn');
-        const currentRoomName = document.getElementById('currentRoomName');
-        const currentRoomCode = document.getElementById('currentRoomCode');
-        const participantName = document.getElementById('participantName');
-        const addParticipantBtn = document.getElementById('addParticipantBtn');
-        const participantsList = document.getElementById('participantsList');
-        const expenseForm = document.getElementById('expenseForm');
-        const expenseDate = document.getElementById('expenseDate');
-        const expenseAmount = document.getElementById('expenseAmount');
-        const expenseDescription = document.getElementById('expenseDescription');
-        const expensePayer = document.getElementById('expensePayer');
-        const splitAll = document.getElementById('splitAll');
-        const participantSelection = document.getElementById('participantSelection');
-        const participantCheckboxes = document.getElementById('participantCheckboxes');
-        const expensesList = document.getElementById('expensesList');
-        const balanceList = document.getElementById('balanceList');
-        const refundsList = document.getElementById('refundsList');
-        const leaveRoomBtn = document.getElementById('leaveRoomBtn');
-        const shareRoomBtn = document.getElementById('shareRoomBtn');
-        const exportDataBtn = document.getElementById('exportDataBtn');
-        const notification = document.getElementById('notification');
-        const notificationText = document.getElementById('notificationText');
-        const syncIndicator = document.getElementById('syncIndicator');
-        const connectionStatus = document.getElementById('connectionStatus');
-
-        // Utility Functions
-        function generateRoomCode() {
-            return Math.random().toString(36).substr(2, 6).toUpperCase();
-        }
-
-        function showNotification(message, type = 'success') {
-            const colors = {
-                success: 'bg-green-500',
-                error: 'bg-red-500',
-                info: 'bg-blue-500'
-            };
-            
-            notification.innerHTML = `
-                <div class="${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg">
-                    <i class="fas fa-${type === 'success' ? 'check' : type === 'error' ? 'exclamation-triangle' : 'info'} mr-2"></i>
-                    <span>${message}</span>
-                </div>
-            `;
-            
-            notification.classList.add('show');
-            setTimeout(() => {
-                notification.classList.remove('show');
-            }, 3000);
-        }
-
-        function showSyncIndicator() {
-            syncIndicator.classList.remove('opacity-0');
-            syncIndicator.classList.add('opacity-100');
-        }
-
-        function hideSyncIndicator() {
-            syncIndicator.classList.remove('opacity-100');
-            syncIndicator.classList.add('opacity-0');
-        }
-
-        function updateConnectionStatus(online) {
-            const statusDiv = connectionStatus.querySelector('div');
-            if (online) {
-                statusDiv.className = 'flex items-center bg-green-500 text-white px-3 py-1 rounded-full text-sm';
-                statusDiv.innerHTML = '<i class="fas fa-wifi mr-2"></i><span>Online</span>';
-            } else {
-                statusDiv.className = 'flex items-center bg-red-500 text-white px-3 py-1 rounded-full text-sm';
-                statusDiv.innerHTML = '<i class="fas fa-wifi-slash mr-2"></i><span>Offline</span>';
-            }
-        }
-
-        // Gestione stanze recenti
-        function saveRecentRoom(roomCode, roomName) {
-            const recent = JSON.parse(localStorage.getItem('ezio-lino-recent-rooms') || '[]');
-            const existing = recent.findIndex(r => r.code === roomCode);
-            
-            if (existing !== -1) {
-                recent.splice(existing, 1);
-            }
-            
-            recent.unshift({ code: roomCode, name: roomName, timestamp: Date.now() });
-            
-            if (recent.length > 5) {
-                recent.pop();
-            }
-            
-            localStorage.setItem('ezio-lino-recent-rooms', JSON.stringify(recent));
-            displayRecentRooms();
-        }
-
-        function displayRecentRooms() {
-            const recent = JSON.parse(localStorage.getItem('ezio-lino-recent-rooms') || '[]');
-            const container = document.getElementById('recentRoomsList');
-            
-            if (recent.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-center col-span-full">Nessuna stanza recente</p>';
-                return;
-            }
-            
-            container.innerHTML = recent.map(room => `
-                <div class="bg-gray-50 p-4 rounded-lg border hover:border-blue-300 cursor-pointer transition-colors recent-room-item" 
-                     data-code="${room.code}">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h4 class="font-bold text-gray-800">${room.name}</h4>
-                            <p class="text-sm text-gray-600">${room.code}</p>
-                        </div>
-                        <i class="fas fa-arrow-right text-blue-500"></i>
-                    </div>
-                </div>
-            `).join('');
-            
-            // Aggiungi event listener per le stanze recenti
-            document.querySelectorAll('.recent-room-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const code = item.dataset.code;
-                    roomCode.value = code;
-                    joinRoom(code);
-                });
-            });
-        }
-
-        // Creazione stanza
-        async function createRoom() {
-            const name = roomName.value.trim();
-            if (!name) {
-                showNotification('Inserisci un nome per la stanza', 'error');
-                return;
-            }
-
-            showSyncIndicator();
-            const code = generateRoomCode();
-            
-            try {
+            async createRoom() {
+                const roomCode = this.generateRoomCode();
                 const roomData = {
-                    name: name,
-                    code: code,
+                    code: roomCode,
                     participants: [],
                     expenses: [],
-                    createdAt: Date.now(),
-                    lastUpdated: Date.now()
+                    createdAt: new Date().toISOString()
                 };
 
-                await db.collection('rooms').doc(code).set(roomData);
-                
-                currentRoom = code;
-                currentRoomData = roomData;
-                
-                saveRecentRoom(code, name);
-                showRoom();
-                showNotification(`Stanza "${name}" creata con successo!`);
-                
-            } catch (error) {
-                console.error('Errore nella creazione della stanza:', error);
-                showNotification('Errore nella creazione della stanza', 'error');
-            } finally {
-                hideSyncIndicator();
-            }
-        }
-
-        // Accesso alla stanza
-        async function joinRoom(code) {
-            if (!code) {
-                code = roomCode.value.trim().toUpperCase();
-            }
-            
-            if (!code) {
-                showNotification('Inserisci il codice della stanza', 'error');
-                return;
+                try {
+                    // Simula creazione su cloud (in produzione userebbe JSONBin.io)
+                    const success = await this.saveToCloud(roomData);
+                    
+                    if (success) {
+                        this.currentRoom = roomCode;
+                        this.roomData = roomData;
+                        this.showRoomInterface();
+                        this.showNotification('Stanza creata con successo!', 'success');
+                        this.startSyncInterval();
+                    } else {
+                        throw new Error('Errore nella creazione della stanza');
+                    }
+                } catch (error) {
+                    this.showNotification('Errore nella creazione della stanza. Modalità offline attiva.', 'error');
+                    // Modalità offline
+                    this.currentRoom = roomCode;
+                    this.roomData = roomData;
+                    this.showRoomInterface();
+                }
             }
 
-            showSyncIndicator();
-            
-            try {
-                const roomDoc = await db.collection('rooms').doc(code).get();
+            async joinRoom() {
+                const roomCode = document.getElementById('roomCodeInput').value.trim().toUpperCase();
                 
-                if (!roomDoc.exists) {
-                    showNotification('Stanza non trovata', 'error');
+                if (!roomCode) {
+                    this.showNotification('Inserisci un codice stanza valido', 'error');
+                    return;
+                }
+
+                try {
+                    // Simula caricamento da cloud
+                    const roomData = await this.loadFromCloud(roomCode);
+                    
+                    if (roomData) {
+                        this.currentRoom = roomCode;
+                        this.roomData = roomData;
+                        this.showRoomInterface();
+                        this.showNotification('Connesso alla stanza!', 'success');
+                        this.startSyncInterval();
+                    } else {
+                        throw new Error('Stanza non trovata');
+                    }
+                } catch (error) {
+                    // Prova a caricare da storage locale
+                    const localData = this.loadLocalRoom(roomCode);
+                    if (localData) {
+                        this.currentRoom = roomCode;
+                        this.roomData = localData;
+                        this.showRoomInterface();
+                        this.showNotification('Caricato da storage locale', 'info');
+                    } else {
+                        this.showNotification('Stanza non trovata', 'error');
+                    }
+                }
+            }
+
+            async saveToCloud(data) {
+                if (!this.isOnline) {
+                    this.saveToLocal(data);
+                    return false;
+                }
+
+                try {
+                    // Simulazione di salvataggio cloud
+                    // In produzione, qui si userebbe JSONBin.io:
+                    // const response = await fetch(`https://api.jsonbin.io/v3/b/${this.binId}`, {
+                    //     method: 'PUT',
+                    //     headers: {
+                    //         'Content-Type': 'application/json',
+                    //         'X-Master-Key': this.apiKey
+                    //     },
+                    //     body: JSON.stringify(data)
+                    // });
+                    
+                    // Per ora salviamo localmente
+                    this.saveToLocal(data);
+                    return true;
+                } catch (error) {
+                    console.error('Errore salvataggio cloud:', error);
+                    this.saveToLocal(data);
+                    return false;
+                }
+            }
+
+            async loadFromCloud(roomCode) {
+                if (!this.isOnline) {
+                    return this.loadLocalRoom(roomCode);
+                }
+
+                try {
+                    // Simulazione caricamento cloud
+                    // In produzione:
+                    // const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+                    //     headers: { 'X-Master-Key': this.apiKey }
+                    // });
+                    
+                    // Per ora carichiamo localmente
+                    return this.loadLocalRoom(roomCode);
+                } catch (error) {
+                    console.error('Errore caricamento cloud:', error);
+                    return this.loadLocalRoom(roomCode);
+                }
+            }
+
+            saveToLocal(data) {
+                localStorage.setItem(`ezio_lino_${this.currentRoom}`, JSON.stringify(data));
+                localStorage.setItem('ezio_lino_current_room', this.currentRoom);
+            }
+
+            loadLocalRoom(roomCode) {
+                const data = localStorage.getItem(`ezio_lino_${roomCode}`);
+                return data ? JSON.parse(data) : null;
+            }
+
+            loadLocalData() {
+                const currentRoom = localStorage.getItem('ezio_lino_current_room');
+                if (currentRoom) {
+                    const roomData = this.loadLocalRoom(currentRoom);
+                    if (roomData) {
+                        this.currentRoom = currentRoom;
+                        this.roomData = roomData;
+                        this.showRoomInterface();
+                    }
+                }
+            }
+
+            generateRoomCode() {
+                return Math.random().toString(36).substr(2, 6).toUpperCase();
+            }
+
+            showRoomInterface() {
+                document.getElementById('roomSelection').style.display = 'none';
+                document.getElementById('roomInfo').style.display = 'block';
+                document.getElementById('currentRoomCode').textContent = this.currentRoom;
+                
+                // Mostra sezioni
+                document.getElementById('participantsSection').style.display = 'block';
+                document.getElementById('expensesSection').style.display = 'block';
+                document.getElementById('expenseListSection').style.display = 'block';
+                document.getElementById('balanceSection').style.display = 'block';
+                document.getElementById('actionsSection').style.display = 'block';
+                
+                this.updateInterface();
+            }
+
+            leaveRoom() {
+                if (this.syncInterval) {
+                    clearInterval(this.syncInterval);
+                }
+                
+                this.currentRoom = null;
+                this.roomData = { participants: [], expenses: [] };
+                
+                document.getElementById('roomSelection').style.display = 'block';
+                document.getElementById('roomInfo').style.display = 'none';
+                document.getElementById('participantsSection').style.display = 'none';
+                document.getElementById('expensesSection').style.display = 'none';
+                document.getElementById('expenseListSection').style.display = 'none';
+                document.getElementById('balanceSection').style.display = 'none';
+                document.getElementById('actionsSection').style.display = 'none';
+                
+                document.getElementById('roomCodeInput').value = '';
+                localStorage.removeItem('ezio_lino_current_room');
+            }
+
+            addParticipant() {
+                const input = document.getElementById('participantInput');
+                const name = input.value.trim();
+                
+                if (!name) {
+                    this.showNotification('Inserisci un nome valido', 'error');
                     return;
                 }
                 
-                const roomData = roomDoc.data();
-                currentRoom = code;
-                currentRoomData = roomData;
-                
-                saveRecentRoom(code, roomData.name);
-                showRoom();
-                startRoomListener();
-                showNotification(`Accesso alla stanza "${roomData.name}" completato!`);
-                
-            } catch (error) {
-                console.error('Errore nell\'accesso alla stanza:', error);
-                showNotification('Errore nell\'accesso alla stanza', 'error');
-            } finally {
-                hideSyncIndicator();
-            }
-        }
-
-        // Visualizzazione stanza
-        function showRoom() {
-            roomSelection.classList.add('hidden');
-            mainInterface.classList.remove('hidden');
-            document.getElementById('floatingAction').classList.remove('hidden');
-            
-            currentRoomName.textContent = currentRoomData.name;
-            currentRoomCode.textContent = currentRoomData.code;
-            
-            // Imposta la data di oggi come default
-            expenseDate.value = new Date().toISOString().split('T')[0];
-            
-            updateParticipantsList();
-            updateExpensesList();
-            updateBalanceAndRefunds();
-        }
-
-        // Listener per la stanza
-        function startRoomListener() {
-            if (roomListener) {
-                roomListener();
-            }
-            
-            roomListener = db.collection('rooms').doc(currentRoom).onSnapshot(doc => {
-                if (doc.exists) {
-                    currentRoomData = doc.data();
-                    updateParticipantsList();
-                    updateExpensesList();
-                    updateBalanceAndRefunds();
-                }
-            });
-        }
-
-        // Gestione partecipanti
-        async function addParticipant() {
-            const name = participantName.value.trim();
-            if (!name) {
-                showNotification('Inserisci il nome del partecipante', 'error');
-                return;
-            }
-
-            if (currentRoomData.participants.includes(name)) {
-                showNotification('Partecipante già presente', 'error');
-                return;
-            }
-
-            showSyncIndicator();
-            
-            try {
-                const updatedParticipants = [...currentRoomData.participants, name];
-                await db.collection('rooms').doc(currentRoom).update({
-                    participants: updatedParticipants,
-                    lastUpdated: Date.now()
-                });
-                
-                participantName.value = '';
-                showNotification(`${name} aggiunto con successo!`);
-                
-            } catch (error) {
-                console.error('Errore nell\'aggiunta del partecipante:', error);
-                showNotification('Errore nell\'aggiunta del partecipante', 'error');
-            } finally {
-                hideSyncIndicator();
-            }
-        }
-
-        function updateParticipantsList() {
-            const participants = currentRoomData.participants || [];
-            
-            // Aggiorna lista partecipanti
-            participantsList.innerHTML = participants.map(participant => `
-                <span class="bg-blue-100 text-blue-800 px-4 py-2 rounded-full flex items-center">
-                    <i class="fas fa-user mr-2"></i>
-                    ${participant}
-                    <button class="ml-2 text-red-500 hover:text-red-700" onclick="removeParticipant('${participant}')">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </span>
-            `).join('');
-            
-            // Aggiorna select del pagatore
-            expensePayer.innerHTML = '<option value="">Chi ha pagato?</option>' + 
-                participants.map(p => `<option value="${p}">${p}</option>`).join('');
-            
-            // Aggiorna checkbox per la divisione
-            participantCheckboxes.innerHTML = participants.map(p => `
-                <label class="flex items-center">
-                    <input type="checkbox" name="participants" value="${p}" class="mr-2">
-                    ${p}
-                </label>
-            `).join('');
-        }
-
-        async function removeParticipant(name) {
-            if (!confirm(`Rimuovere ${name} dalla stanza?`)) return;
-
-            showSyncIndicator();
-            
-            try {
-                const updatedParticipants = currentRoomData.participants.filter(p => p !== name);
-                await db.collection('rooms').doc(currentRoom).update({
-                    participants: updatedParticipants,
-                    lastUpdated: Date.now()
-                });
-                
-                showNotification(`${name} rimosso con successo!`);
-                
-            } catch (error) {
-                console.error('Errore nella rimozione del partecipante:', error);
-                showNotification('Errore nella rimozione del partecipante', 'error');
-            } finally {
-                hideSyncIndicator();
-            }
-        }
-
-        // Gestione spese
-        async function addExpense(e) {
-            e.preventDefault();
-            
-            const date = expenseDate.value;
-            const amount = parseFloat(expenseAmount.value);
-            const description = expenseDescription.value.trim();
-            const payer = expensePayer.value;
-            
-            if (!date || !amount || !description || !payer) {
-                showNotification('Completa tutti i campi', 'error');
-                return;
-            }
-
-            let involvedParticipants;
-            if (splitAll.checked) {
-                involvedParticipants = currentRoomData.participants;
-            } else {
-                involvedParticipants = Array.from(document.querySelectorAll('input[name="participants"]:checked'))
-                    .map(cb => cb.value);
-                
-                if (involvedParticipants.length === 0) {
-                    showNotification('Seleziona almeno un partecipante', 'error');
+                if (this.roomData.participants.includes(name)) {
+                    this.showNotification('Partecipante già presente', 'error');
                     return;
                 }
+                
+                this.roomData.participants.push(name);
+                input.value = '';
+                this.updateInterface();
+                this.syncData();
+                this.showNotification('Partecipante aggiunto!', 'success');
             }
 
-            showSyncIndicator();
-            
-            try {
+            removeParticipant(name) {
+                this.roomData.participants = this.roomData.participants.filter(p => p !== name);
+                this.updateInterface();
+                this.syncData();
+                this.showNotification('Partecipante rimosso', 'info');
+            }
+
+            addExpense() {
+                const date = document.getElementById('expenseDate').value;
+                const amount = parseFloat(document.getElementById('expenseAmount').value);
+                const description = document.getElementById('expenseDescription').value.trim();
+                const payer = document.getElementById('expensePayer').value;
+                
+                if (!date || !amount || !description || !payer) {
+                    this.showNotification('Compila tutti i campi', 'error');
+                    return;
+                }
+                
+                const participantCheckboxes = document.querySelectorAll('#expenseParticipants input[type="checkbox"]:checked');
+                const participants = Array.from(participantCheckboxes).map(cb => cb.value);
+                
+                if (participants.length === 0) {
+                    this.showNotification('Seleziona almeno un partecipante', 'error');
+                    return;
+                }
+                
                 const expense = {
                     id: Date.now(),
-                    date: date,
-                    amount: amount,
-                    description: description,
-                    payer: payer,
-                    participants: involvedParticipants,
-                    createdAt: Date.now()
+                    date,
+                    amount,
+                    description,
+                    payer,
+                    participants,
+                    createdAt: new Date().toISOString()
                 };
-
-                const updatedExpenses = [...(currentRoomData.expenses || []), expense];
-                await db.collection('rooms').doc(currentRoom).update({
-                    expenses: updatedExpenses,
-                    lastUpdated: Date.now()
-                });
                 
-                // Reset form
-                expenseForm.reset();
-                expenseDate.value = new Date().toISOString().split('T')[0];
-                splitAll.checked = true;
-                participantSelection.classList.add('hidden');
-                
-                showNotification('Spesa aggiunta con successo!');
-                
-            } catch (error) {
-                console.error('Errore nell\'aggiunta della spesa:', error);
-                showNotification('Errore nell\'aggiunta della spesa', 'error');
-            } finally {
-                hideSyncIndicator();
+                this.roomData.expenses.push(expense);
+                this.clearExpenseForm();
+                this.updateInterface();
+                this.syncData();
+                this.showNotification('Spesa aggiunta!', 'success');
             }
-        }
 
-        function updateExpensesList() {
-            const expenses = currentRoomData.expenses || [];
-            
-            if (expenses.length === 0) {
-                expensesList.innerHTML = '<p class="text-gray-500 text-center">Nessuna spesa registrata</p>';
-                return;
+            clearExpenseForm() {
+                document.getElementById('expenseAmount').value = '';
+                document.getElementById('expenseDescription').value = '';
+                document.getElementById('expensePayer').value = '';
+                document.querySelectorAll('#expenseParticipants input[type="checkbox"]').forEach(cb => cb.checked = false);
             }
-            
-            // Ordina le spese per data (più recenti prima)
-            expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
-            
-            expensesList.innerHTML = expenses.map(expense => `
-                <div class="expense-item bg-gray-50 p-4 rounded-lg">
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1">
-                            <div class="flex items-center gap-2 mb-1">
-                                <i class="fas fa-calendar-alt text-gray-500"></i>
-                                <span class="text-sm text-gray-600">${new Date(expense.date).toLocaleDateString('it-IT')}</span>
-                                <span class="text-lg font-bold text-green-600">€${expense.amount.toFixed(2)}</span>
-                            </div>
-                            <h4 class="font-bold text-gray-800">${expense.description}</h4>
-                            <p class="text-sm text-gray-600 mt-1">
-                                <i class="fas fa-user mr-1"></i>
-                                Pagato da: <strong>${expense.payer}</strong>
-                            </p>
-                            <p class="text-sm text-gray-600">
-                                <i class="fas fa-users mr-1"></i>
-                                Diviso tra: ${expense.participants.join(', ')}
-                            </p>
+
+            removeExpense(id) {
+                this.roomData.expenses = this.roomData.expenses.filter(e => e.id !== id);
+                this.updateInterface();
+                this.syncData();
+                this.showNotification('Spesa rimossa', 'info');
+            }
+
+            updateInterface() {
+                this.updateParticipantsList();
+                this.updateExpenseForm();
+                this.updateExpensesList();
+                this.updateBalances();
+            }
+
+            updateParticipantsList() {
+                const container = document.getElementById('participantsList');
+                container.innerHTML = '';
+                
+                this.roomData.participants.forEach(participant => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg';
+                    div.innerHTML = `
+                        <div class="flex items-center">
+                            <i class="fas fa-user mr-2 text-purple-600"></i>
+                            <span class="font-medium">${participant}</span>
                         </div>
-                        <button class="text-red-500 hover:text-red-700 ml-4" onclick="removeExpense(${expense.id})">
-                            <i class="fas fa-trash"></i>
+                        <button onclick="app.removeParticipant('${participant}')" class="text-red-600 hover:text-red-800">
+                            <i class="fas fa-times"></i>
                         </button>
-                    </div>
-                </div>
-            `).join('');
-        }
+                    `;
+                    container.appendChild(div);
+                });
+            }
 
-        async function removeExpense(expenseId) {
-            if (!confirm('Rimuovere questa spesa?')) return;
-
-            showSyncIndicator();
-            
-            try {
-                const updatedExpenses = currentRoomData.expenses.filter(e => e.id !== expenseId);
-                await db.collection('rooms').doc(currentRoom).update({
-                    expenses: updatedExpenses,
-                    lastUpdated: Date.now()
+            updateExpenseForm() {
+                const payerSelect = document.getElementById('expensePayer');
+                const participantsDiv = document.getElementById('expenseParticipants');
+                
+                // Aggiorna select pagatore
+                payerSelect.innerHTML = '<option value="">Seleziona chi ha pagato</option>';
+                this.roomData.participants.forEach(participant => {
+                    const option = document.createElement('option');
+                    option.value = participant;
+                    option.textContent = participant;
+                    payerSelect.appendChild(option);
                 });
                 
-                showNotification('Spesa rimossa con successo!');
-                
-            } catch (error) {
-                console.error('Errore nella rimozione della spesa:', error);
-                showNotification('Errore nella rimozione della spesa', 'error');
-            } finally {
-                hideSyncIndicator();
-            }
-        }
-
-        // Calcolo bilancio e rimborsi
-        function updateBalanceAndRefunds() {
-            const participants = currentRoomData.participants || [];
-            const expenses = currentRoomData.expenses || [];
-            
-            if (participants.length === 0) {
-                balanceList.innerHTML = '<p class="text-gray-500">Nessun partecipante</p>';
-                refundsList.innerHTML = '<p class="text-gray-500">Nessun rimborso necessario</p>';
-                return;
-            }
-            
-            // Calcola bilancio per ogni partecipante
-            const balances = {};
-            participants.forEach(p => balances[p] = 0);
-            
-            expenses.forEach(expense => {
-                const costPerPerson = expense.amount / expense.participants.length;
-                
-                // Il pagatore ha speso per tutti
-                balances[expense.payer] += expense.amount;
-                
-                // Ogni partecipante deve la sua quota
-                expense.participants.forEach(participant => {
-                    balances[participant] -= costPerPerson;
+                // Aggiorna checkboxes partecipanti
+                participantsDiv.innerHTML = '';
+                this.roomData.participants.forEach(participant => {
+                    const label = document.createElement('label');
+                    label.className = 'flex items-center space-x-2';
+                    label.innerHTML = `
+                        <input type="checkbox" value="${participant}" checked class="rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                        <span class="text-sm">${participant}</span>
+                    `;
+                    participantsDiv.appendChild(label);
                 });
-            });
-            
-            // Mostra bilancio individuale
-            balanceList.innerHTML = participants.map(participant => {
-                const balance = balances[participant];
-                const balanceClass = balance > 0 ? 'balance-positive' : balance < 0 ? 'balance-negative' : 'balance-zero';
-                const icon = balance > 0 ? 'fa-plus' : balance < 0 ? 'fa-minus' : 'fa-equals';
-                
-                return `
-                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                        <span class="font-medium">${participant}</span>
-                        <span class="${balanceClass} font-bold">
-                            <i class="fas ${icon} mr-1"></i>
-                            €${Math.abs(balance).toFixed(2)}
-                        </span>
-                    </div>
-                `;
-            }).join('');
-            
-            // Calcola rimborsi ottimizzati
-            const refunds = calculateOptimalRefunds(balances);
-            
-            if (refunds.length === 0) {
-                refundsList.innerHTML = '<p class="text-green-600 font-medium"><i class="fas fa-check mr-2"></i>Tutto a posto! Nessun rimborso necessario.</p>';
-            } else {
-                refundsList.innerHTML = refunds.map(refund => `
-                    <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <i class="fas fa-arrow-right text-yellow-600 mr-2"></i>
-                                <strong>${refund.from}</strong> deve pagare <strong>${refund.to}</strong>
-                            </div>
-                            <span class="text-xl font-bold text-yellow-600">€${refund.amount.toFixed(2)}</span>
-                        </div>
-                    </div>
-                `).join('');
             }
-        }
 
-        function calculateOptimalRefunds(balances) {
-            const refunds = [];
-            const debtors = [];
-            const creditors = [];
-            
-            // Separa debitori e creditori
-            Object.entries(balances).forEach(([person, balance]) => {
-                if (balance > 0.01) {
-                    creditors.push({ person, amount: balance });
-                } else if (balance < -0.01) {
-                    debtors.push({ person, amount: -balance });
+            updateExpensesList() {
+                const container = document.getElementById('expensesList');
+                container.innerHTML = '';
+                
+                if (this.roomData.expenses.length === 0) {
+                    container.innerHTML = '<p class="text-gray-500 text-center py-8">Nessuna spesa registrata</p>';
+                    return;
                 }
-            });
-            
-            // Ordina per importo (dal più grande al più piccolo)
-            creditors.sort((a, b) => b.amount - a.amount);
-            debtors.sort((a, b) => b.amount - a.amount);
-            
-            // Calcola rimborsi ottimali
-            let i = 0, j = 0;
-            while (i < creditors.length && j < debtors.length) {
-                const creditor = creditors[i];
-                const debtor = debtors[j];
                 
-                const amount = Math.min(creditor.amount, debtor.amount);
+                this.roomData.expenses.slice().reverse().forEach(expense => {
+                    const div = document.createElement('div');
+                    div.className = 'expense-item p-4 bg-gray-50 rounded-lg border';
+                    div.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2 mb-2">
+                                    <i class="fas fa-receipt text-purple-600"></i>
+                                    <span class="font-semibold">${expense.description}</span>
+                                    <span class="text-gray-500 text-sm">${expense.date}</span>
+                                </div>
+                                <div class="text-sm text-gray-600 mb-2">
+                                    Pagato da: <span class="font-semibold text-purple-600">${expense.payer}</span>
+                                </div>
+                                <div class="text-sm text-gray-600">
+                                    Diviso tra: ${expense.participants.join(', ')}
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-lg font-bold text-green-600">€${expense.amount.toFixed(2)}</span>
+                                <button onclick="app.removeExpense(${expense.id})" class="text-red-600 hover:text-red-800">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+
+            updateBalances() {
+                const balances = this.calculateBalances();
+                this.updateBalancesList(balances);
+                this.updateReimbursementsList(balances);
+            }
+
+            calculateBalances() {
+                const balances = {};
                 
-                if (amount > 0.01) {
-                    refunds.push({
-                        from: debtor.person,
-                        to: creditor.person,
+                // Inizializza bilanci
+                this.roomData.participants.forEach(participant => {
+                    balances[participant] = 0;
+                });
+                
+                // Calcola bilanci per ogni spesa
+                this.roomData.expenses.forEach(expense => {
+                    const perPerson = expense.amount / expense.participants.length;
+                    
+                    // Il pagatore ha pagato per tutti
+                    balances[expense.payer] += expense.amount;
+                    
+                    // Ogni partecipante deve la sua parte
+                    expense.participants.forEach(participant => {
+                        balances[participant] -= perPerson;
+                    });
+                });
+                
+                return balances;
+            }
+
+            updateBalancesList(balances) {
+                const container = document.getElementById('balanceList');
+                container.innerHTML = '';
+                
+                Object.entries(balances).forEach(([participant, balance]) => {
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between items-center p-3 bg-gray-50 rounded-lg';
+                    
+                    const isPositive = balance > 0;
+                    const balanceClass = isPositive ? 'balance-positive' : 'balance-negative';
+                    const icon = isPositive ? 'fas fa-arrow-up' : 'fas fa-arrow-down';
+                    
+                    div.innerHTML = `
+                        <div class="flex items-center">
+                            <i class="fas fa-user mr-2 text-purple-600"></i>
+                            <span class="font-medium">${participant}</span>
+                        </div>
+                        <div class="flex items-center ${balanceClass}">
+                            <i class="${icon} mr-2"></i>
+                            <span class="font-bold">€${Math.abs(balance).toFixed(2)}</span>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+
+            updateReimbursementsList(balances) {
+                const container = document.getElementById('reimbursementList');
+                container.innerHTML = '';
+                
+                const reimbursements = this.calculateReimbursements(balances);
+                
+                if (reimbursements.length === 0) {
+                    container.innerHTML = '<p class="text-gray-500 text-center py-4">Nessun rimborso necessario</p>';
+                    return;
+                }
+                
+                reimbursements.forEach(reimbursement => {
+                    const div = document.createElement('div');
+                    div.className = 'p-3 bg-blue-50 rounded-lg border border-blue-200';
+                    div.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <i class="fas fa-arrow-right text-blue-600"></i>
+                                <span class="font-medium">${reimbursement.from}</span>
+                                <span class="text-gray-500">→</span>
+                                <span class="font-medium">${reimbursement.to}</span>
+                            </div>
+                            <span class="font-bold text-blue-600">€${reimbursement.amount.toFixed(2)}</span>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+
+            calculateReimbursements(balances) {
+                const reimbursements = [];
+                const creditors = [];
+                const debtors = [];
+                
+                // Separa creditori e debitori
+                Object.entries(balances).forEach(([participant, balance]) => {
+                    if (balance > 0.01) {
+                        creditors.push({ name: participant, amount: balance });
+                    } else if (balance < -0.01) {
+                        debtors.push({ name: participant, amount: Math.abs(balance) });
+                    }
+                });
+                
+                // Calcola rimborsi ottimali
+                while (creditors.length > 0 && debtors.length > 0) {
+                    const creditor = creditors[0];
+                    const debtor = debtors[0];
+                    
+                    const amount = Math.min(creditor.amount, debtor.amount);
+                    
+                    reimbursements.push({
+                        from: debtor.name,
+                        to: creditor.name,
                         amount: amount
                     });
+                    
+                    creditor.amount -= amount;
+                    debtor.amount -= amount;
+                    
+                    if (creditor.amount < 0.01) {
+                        creditors.shift();
+                    }
+                    if (debtor.amount < 0.01) {
+                        debtors.shift();
+                    }
                 }
                 
-                creditor.amount -= amount;
-                debtor.amount -= amount;
-                
-                if (creditor.amount <= 0.01) i++;
-                if (debtor.amount <= 0.01) j++;
+                return reimbursements;
             }
-            
-            return refunds;
-        }
 
-        // Funzioni di utilità
-        function leaveRoom() {
-            if (confirm('Sei sicuro di voler uscire dalla stanza?')) {
-                if (roomListener) {
-                    roomListener();
-                    roomListener = null;
-                }
-                
-                currentRoom = null;
-                currentRoomData = null;
-                
-                roomSelection.classList.remove('hidden');
-                mainInterface.classList.add('hidden');
-                document.getElementById('floatingAction').classList.add('hidden');
-                
-                showNotification('Hai lasciato la stanza');
-            }
-        }
-
-        function shareRoom() {
-            if (navigator.share) {
-                navigator.share({
-                    title: `Stanza ${currentRoomData.name}`,
-                    text: `Accedi alla stanza delle spese condivise "${currentRoomData.name}" con il codice: ${currentRoom}`,
-                    url: window.location.href
-                });
-            } else {
-                // Fallback per browser che non supportano Web Share API
-                const shareText = `Accedi alla stanza delle spese condivise "${currentRoomData.name}" con il codice: ${currentRoom}\n\nLink: ${window.location.href}`;
-                navigator.clipboard.writeText(shareText).then(() => {
-                    showNotification('Link copiato negli appunti!');
-                }).catch(() => {
-                    showNotification('Codice stanza: ' + currentRoom, 'info');
-                });
-            }
-        }
-
-        function exportData() {
-            const data = {
-                room: currentRoomData,
-                exportDate: new Date().toISOString(),
-                totalExpenses: currentRoomData.expenses?.length || 0,
-                totalAmount: currentRoomData.expenses?.reduce((sum, e) => sum + e.amount, 0) || 0
-            };
-            
-            const dataStr = JSON.stringify(data, null, 2);
-            const blob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `ezio-lino-${currentRoom}-${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            
-            URL.revokeObjectURL(url);
-            showNotification('Dati esportati con successo!');
-        }
-
-        // Event Listeners
-        createRoomBtn.addEventListener('click', createRoom);
-        joinRoomBtn.addEventListener('click', () => joinRoom());
-        addParticipantBtn.addEventListener('click', addParticipant);
-        expenseForm.addEventListener('submit', addExpense);
-        leaveRoomBtn.addEventListener('click', leaveRoom);
-        shareRoomBtn.addEventListener('click', shareRoom);
-        exportDataBtn.addEventListener('click', exportData);
-
-        // Gestione della divisione delle spese
-        splitAll.addEventListener('change', function() {
-            if (this.checked) {
-                participantSelection.classList.add('hidden');
-            } else {
-                participantSelection.classList.remove('hidden');
-            }
-        });
-
-        // Gestione tasti rapidi
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey || e.metaKey) {
-                if (e.key === 'Enter' && !mainInterface.classList.contains('hidden')) {
-                    e.preventDefault();
-                    document.getElementById('quickAddBtn').click();
+            syncData() {
+                if (this.currentRoom) {
+                    this.saveToCloud(this.roomData);
                 }
             }
-        });
 
-        // Quick add button
-        document.getElementById('quickAddBtn').addEventListener('click', function() {
-            expenseAmount.focus();
-        });
-
-        // Gestione connessione
-        window.addEventListener('online', () => updateConnectionStatus(true));
-        window.addEventListener('offline', () => updateConnectionStatus(false));
-
-        // Inizializzazione
-        document.addEventListener('DOMContentLoaded', function() {
-            updateConnectionStatus(navigator.onLine);
-            displayRecentRooms();
-            
-            // Auto-focus sul campo nome stanza
-            roomName.focus();
-        });
-
-        // Gestione enter per i campi input
-        roomName.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                createRoom();
+            startSyncInterval() {
+                if (this.syncInterval) {
+                    clearInterval(this.syncInterval);
+                }
+                
+                this.syncInterval = setInterval(() => {
+                    if (this.isOnline && this.currentRoom) {
+                        this.refreshData();
+                    }
+                }, 10000); // Sync ogni 10 secondi
             }
-        });
 
-        roomCode.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                joinRoom();
+            async refreshData() {
+                if (!this.currentRoom) return;
+                
+                try {
+                    const updatedData = await this.loadFromCloud(this.currentRoom);
+                    if (updatedData && JSON.stringify(updatedData) !== JSON.stringify(this.roomData)) {
+                        this.roomData = updatedData;
+                        this.updateInterface();
+                        this.showNotification('Dati aggiornati!', 'info');
+                    }
+                } catch (error) {
+                    console.error('Errore refresh:', error);
+                }
             }
-        });
 
-        participantName.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                addParticipant();
+            exportData() {
+                const data = {
+                    room: this.currentRoom,
+                    participants: this.roomData.participants,
+                    expenses: this.roomData.expenses,
+                    balances: this.calculateBalances(),
+                    reimbursements: this.calculateReimbursements(this.calculateBalances()),
+                    exportDate: new Date().toISOString()
+                };
+                
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ezio_lino_${this.currentRoom}_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                this.showNotification('Dati esportati!', 'success');
             }
-        });
 
-        // Auto-maiuscolo per il codice stanza
-        roomCode.addEventListener('input', function() {
-            this.value = this.value.toUpperCase();
-        });
+            clearRoom() {
+                if (confirm('Sei sicuro di voler cancellare tutti i dati della stanza?')) {
+                    this.roomData = { participants: [], expenses: [] };
+                    this.updateInterface();
+                    this.syncData();
+                    this.showNotification('Stanza cancellata!', 'info');
+                }
+            }
+
+            processPendingActions() {
+                // Elabora azioni in sospeso quando torna online
+                while (this.pendingActions.length > 0) {
+                    const action = this.pendingActions.shift();
+                    try {
+                        action();
+                    } catch (error) {
+                        console.error('Errore elaborazione azione:', error);
+                    }
+                }
+            }
+
+            showNotification(message, type = 'info') {
+                const notification = document.getElementById('notification');
+                notification.textContent = message;
+                notification.className = `notification ${type}`;
+                notification.classList.add('show');
+                
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                }, 3000);
+            }
+        }
+
+        // Inizializza l'app
+        const app = new EzioLinoApp();
+        window.app = app; // Per debug
     </script>
 </body>
 </html>
     <script id="html_badge_script1">
         window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
-            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDqu6WnqVCic99vsJyNuKwFQdggHVf1j561YSZgnNacHRGMt6KWaFhSim9S1apqMeuShPN9GHdEr9ebQWDNjs2vh8FZ87Qj0bXf0yY%2F3EGZl7n1alSiyyNZ7KXHfhes%2BsFVOikkg9fNZmhAca6%2Fhj9nlD4uJsILQJz%2FggryX6apE6gYamiUMrcZLk1RfMg8DpKBeCBDYi3ez%2B5y%2BLgY1Hm5oM%2B4CrCSDgdY2nZAzXVOyU%2FN3mjt72DB%2FBrY0z%2BF1kCSQbmtfSJQNCo5oLOMwy5jQc3srTzVxc1jZX%2FP2vF6St3pYVazfd8hMn3g1t1Y%2FgSnJ5nqPLviQXGq%2FdP5X%2FLfnnDFroPUXKpOWBwtijhahu44EW7nYNm3HHmKvx2mzxVDilJMsngqsXuAHxRm6phMNfAEglSNdHKRnIapOz9l3iCH3jcHB%2B9oA4RVteupgmfgCGcMWz%2BtLLh31rQbo%2FI%2B4VmMxSfejEdUH6pRAMDGPlUHhSeqq7HltwuPVGFouDCA%3D%3D";
+            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDg7Yb2PrIVOXW6FJh%2B6PzufUMBPmH25N5UB%2FF6OrXFVCXMvC%2FUV%2BtiCR9wv143e9UGAEs7PppGHc%2BbV19g4uIVIOQS8gGjPz%2FmvmoxO0zGu%2BurfDV5vtI6BQrhKeH3aOGHKJ6Lkg2a%2FaRahaT5%2BVmyWF0ERLlFKz7l1lmuMQt5HNOQID1SgC3GcKvN7Q%2BwGfjPQ4NANx%2B8uLMMUXz6l9QqG1mG8M2juS%2FqcYS%2BrdDxh87E%2BiFmFbLx%2BaFHn6rYbdMUXYHeFXTRKM033l5jh%2FsvLsd4Ugd6u02VSMDtO54TNO756%2FohoxkFzrxJAEpkriP8eURgLRG55%2B8J4VOnfGUJ6A5cmjsb1q1b7bkCVDPOOiZb3QCfWMGRW7U2zxwzIshctNM37C1uA2rRnENopQt%2BlEmqIB97JTXEUn%2BsJnidupp7sBMUZbe8mAZ%2FtpNCmJ6I2j0CkPjBFAP9f7tg0h2NJzReEskinGW9%2BQyip2QltBzjd7gXE5X03zb7MYMlfE2ud2mV%2BoYUuCGVDjYJ5O3ow%3D";
         window.__genspark_locale = "it-IT";
-        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDqu6WnqVCic99vsJyNuKwFQdggHVf1j561YSZgnNacHRGMt6KWaFhSim9S1apqMeuShPN9GHdEr9ebQWDNjs2vh8FZ87Qj0bXf0yY/3EGZl7n1alSiyyNZ7KXHfhes+sFVOikkg9fNZmhAca6/hj9nlD4uJsILQJz/ggryX6apE6gYamiUMrcZLk1RfMg8DpKBeCBDYi3ez+5y+LgY1Hm5oM+4CrCSDgdY2nZAzXVOyU/N3mjt72DB/BrY0z+F1kCSQbmtfSJQNCo5oLOMwy5jQc3srTzVxc1jZX/P2vF6St3pYVazfd8hMn3g1t1Y/gSnJ5nqPLviQXGq/dP5X/LfnnDFroPUXKpOWBwtijhahu44EW7nYNm3HHmKvx2mzxVDilJMsngqsXuAHxRm6phMNfAEglSNdHKRnIapOz9l3iCH3jcHB+9oA4RVteupgmfgCGcMWz+tLLh31rQbo/I+4VmMxSfejEdUH6pRAMDGPlUHhSeqq7HltwuPVGFouDCA==";
+        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDg7Yb2PrIVOXW6FJh+6PzufUMBPmH25N5UB/F6OrXFVCXMvC/UV+tiCR9wv143e9UGAEs7PppGHc+bV19g4uIVIOQS8gGjPz/mvmoxO0zGu+urfDV5vtI6BQrhKeH3aOGHKJ6Lkg2a/aRahaT5+VmyWF0ERLlFKz7l1lmuMQt5HNOQID1SgC3GcKvN7Q+wGfjPQ4NANx+8uLMMUXz6l9QqG1mG8M2juS/qcYS+rdDxh87E+iFmFbLx+aFHn6rYbdMUXYHeFXTRKM033l5jh/svLsd4Ugd6u02VSMDtO54TNO756/ohoxkFzrxJAEpkriP8eURgLRG55+8J4VOnfGUJ6A5cmjsb1q1b7bkCVDPOOiZb3QCfWMGRW7U2zxwzIshctNM37C1uA2rRnENopQt+lEmqIB97JTXEUn+sJnidupp7sBMUZbe8mAZ/tpNCmJ6I2j0CkPjBFAP9f7tg0h2NJzReEskinGW9+Qyip2QltBzjd7gXE5X03zb7MYMlfE2ud2mV+oYUuCGVDjYJ5O3ow=";
     </script>
     
     <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
