@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ezio/Lino - Gestore Spese Persistente</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <style>
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .pulse-success {
+            animation: pulseSuccess 0.5s ease-in-out;
+        }
+        
+        @keyframes pulseSuccess {
+            0% { background-color: #10B981; }
+            50% { background-color: #059669; }
+            100% { background-color: #10B981; }
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+        
+        .room-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .expense-card {
+            border-left: 4px solid #3B82F6;
+        }
+        
+        .balance-positive {
+            color: #10B981;
+        }
+        
+        .balance-negative {
+            color: #EF4444;
+        }
+        
+        .connection-indicator {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Indicatore di connessione -->
+    <div id="connectionIndicator" class="connection-indicator">
+        <div class="flex items-center space-x-2 bg-white px-3 py-2 rounded-full shadow-md">
+            <div id="connectionStatus" class="w-3 h-3 bg-green-500 rounded-full"></div>
+            <span id="connectionText" class="text-sm font-medium text-gray-700">Online</span>
+        </div>
+    </div>
+
+    <!-- Notifiche -->
+    <div id="notifications" class="notification"></div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <i class="fas fa-coins text-blue-600 text-2xl mr-3"></i>
+                    <h1 class="text-xl font-bold text-gray-900">Ezio/Lino</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="exportBtn" class="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium">
+                        <i class="fas fa-download mr-2"></i>Esporta
+                    </button>
+                    <button id="importBtn" class="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium">
+                        <i class="fas fa-upload mr-2"></i>Importa
+                    </button>
+                    <input type="file" id="importFile" accept=".json" class="hidden">
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenitore principale -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Gestione Stanza -->
+        <div id="roomSection" class="mb-8">
+            <div class="room-card text-white rounded-xl p-6 shadow-lg">
+                <h2 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-users mr-2"></i>Gestione Stanza
+                </h2>
+                
+                <div id="roomSelection" class="space-y-4">
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium mb-2">Codice Stanza</label>
+                            <input type="text" id="roomCode" placeholder="Inserisci codice stanza" 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="joinRoomBtn" class="bg-green-500 hover:bg-green-600 px-6 py-2 rounded-lg font-medium transition-colors">
+                                <i class="fas fa-sign-in-alt mr-2"></i>Accedi
+                            </button>
+                            <button id="createRoomBtn" class="bg-blue-500 hover:bg-blue-600 px-6 py-2 rounded-lg font-medium transition-colors">
+                                <i class="fas fa-plus mr-2"></i>Crea Nuova
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="roomInfo" class="hidden mt-4 p-4 bg-white bg-opacity-20 rounded-lg">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="font-medium">Stanza Attiva: <span id="currentRoom"></span></p>
+                            <p class="text-sm opacity-90">
+                                <i class="fas fa-save mr-1"></i>
+                                Ultimo salvataggio: <span id="lastSaved">-</span>
+                            </p>
+                        </div>
+                        <button id="leaveRoomBtn" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg text-sm font-medium">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Esci
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gestione Partecipanti -->
+        <div id="participantsSection" class="hidden mb-8">
+            <div class="bg-white rounded-xl p-6 shadow-lg">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">
+                    <i class="fas fa-user-friends mr-2"></i>Partecipanti
+                </h2>
+                
+                <div class="flex flex-col sm:flex-row gap-4 mb-4">
+                    <div class="flex-1">
+                        <input type="text" id="participantName" placeholder="Nome partecipante" 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                    <button id="addParticipantBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                        <i class="fas fa-user-plus mr-2"></i>Aggiungi
+                    </button>
+                </div>
+                
+                <div id="participantsList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+            </div>
+        </div>
+
+        <!-- Aggiunta Spesa -->
+        <div id="expenseSection" class="hidden mb-8">
+            <div class="bg-white rounded-xl p-6 shadow-lg">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">
+                    <i class="fas fa-receipt mr-2"></i>Aggiungi Spesa
+                </h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Data</label>
+                        <input type="date" id="expenseDate" 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Importo (€)</label>
+                        <input type="number" id="expenseAmount" placeholder="25.50" step="0.01" 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Descrizione</label>
+                    <input type="text" id="expenseDescription" placeholder="Descrizione della spesa" 
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Chi ha pagato</label>
+                        <select id="expensePayer" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">Seleziona chi ha pagato</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Dividi tra</label>
+                        <div class="flex items-center space-x-4">
+                            <label class="flex items-center">
+                                <input type="radio" name="splitType" value="all" checked class="mr-2">
+                                <span class="text-sm">Tutti</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="splitType" value="custom" class="mr-2">
+                                <span class="text-sm">Personalizzato</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="customSplitSection" class="hidden mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Seleziona partecipanti</label>
+                    <div id="customSplitList" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+                </div>
+                
+                <button id="addExpenseBtn" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-medium transition-colors">
+                    <i class="fas fa-plus mr-2"></i>Aggiungi Spesa
+                </button>
+            </div>
+        </div>
+
+        <!-- Lista Spese -->
+        <div id="expensesListSection" class="hidden mb-8">
+            <div class="bg-white rounded-xl p-6 shadow-lg">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">
+                    <i class="fas fa-list mr-2"></i>Spese Registrate
+                </h2>
+                <div id="expensesList" class="space-y-3"></div>
+            </div>
+        </div>
+
+        <!-- Bilanci -->
+        <div id="balanceSection" class="hidden mb-8">
+            <div class="bg-white rounded-xl p-6 shadow-lg">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">
+                    <i class="fas fa-balance-scale mr-2"></i>Bilanci
+                </h2>
+                <div id="balancesList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            </div>
+        </div>
+
+        <!-- Rimborsi -->
+        <div id="reimbursementSection" class="hidden">
+            <div class="bg-white rounded-xl p-6 shadow-lg">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">
+                    <i class="fas fa-exchange-alt mr-2"></i>Rimborsi Necessari
+                </h2>
+                <div id="reimbursementsList" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Classe per gestire la persistenza dei dati
+        class PersistentStorage {
+            constructor() {
+                this.currentRoom = null;
+                this.isOnline = navigator.onLine;
+                this.lastSyncTime = null;
+                this.pendingChanges = [];
+                this.syncInterval = null;
+                
+                // Eventi di connessione
+                window.addEventListener('online', () => this.handleOnline());
+                window.addEventListener('offline', () => this.handleOffline());
+                
+                this.updateConnectionStatus();
+            }
+            
+            handleOnline() {
+                this.isOnline = true;
+                this.updateConnectionStatus();
+                this.syncPendingChanges();
+            }
+            
+            handleOffline() {
+                this.isOnline = false;
+                this.updateConnectionStatus();
+            }
+            
+            updateConnectionStatus() {
+                const indicator = document.getElementById('connectionStatus');
+                const text = document.getElementById('connectionText');
+                
+                if (this.isOnline) {
+                    indicator.className = 'w-3 h-3 bg-green-500 rounded-full';
+                    text.textContent = 'Online';
+                } else {
+                    indicator.className = 'w-3 h-3 bg-red-500 rounded-full';
+                    text.textContent = 'Offline';
+                }
+            }
+            
+            generateRoomCode() {
+                return Math.random().toString(36).substr(2, 8).toUpperCase();
+            }
+            
+            createRoom() {
+                const roomCode = this.generateRoomCode();
+                const roomData = {
+                    code: roomCode,
+                    participants: [],
+                    expenses: [],
+                    created: new Date().toISOString(),
+                    lastModified: new Date().toISOString()
+                };
+                
+                this.saveRoomData(roomCode, roomData);
+                return roomCode;
+            }
+            
+            joinRoom(roomCode) {
+                const roomData = this.loadRoomData(roomCode);
+                if (roomData) {
+                    this.currentRoom = roomCode;
+                    this.startPeriodicSync();
+                    return roomData;
+                }
+                return null;
+            }
+            
+            saveRoomData(roomCode, data) {
+                try {
+                    // Salvataggio locale
+                    localStorage.setItem(`room_${roomCode}`, JSON.stringify(data));
+                    
+                    // Salvataggio cloud simulato (in un'app reale useresti un vero database)
+                    if (this.isOnline) {
+                        this.saveToCloud(roomCode, data);
+                    } else {
+                        this.addPendingChange('save', roomCode, data);
+                    }
+                    
+                    this.lastSyncTime = new Date();
+                    this.updateLastSavedTime();
+                    this.showNotification('Dati salvati con successo', 'success');
+                    
+                } catch (error) {
+                    console.error('Errore nel salvataggio:', error);
+                    this.showNotification('Errore nel salvataggio', 'error');
+                }
+            }
+            
+            loadRoomData(roomCode) {
+                try {
+                    // Prova prima dal cloud se online
+                    if (this.isOnline) {
+                        const cloudData = this.loadFromCloud(roomCode);
+                        if (cloudData) {
+                            // Aggiorna anche la copia locale
+                            localStorage.setItem(`room_${roomCode}`, JSON.stringify(cloudData));
+                            return cloudData;
+                        }
+                    }
+                    
+                    // Fallback al salvataggio locale
+                    const localData = localStorage.getItem(`room_${roomCode}`);
+                    if (localData) {
+                        return JSON.parse(localData);
+                    }
+                    
+                    return null;
+                    
+                } catch (error) {
+                    console.error('Errore nel caricamento:', error);
+                    this.showNotification('Errore nel caricamento dei dati', 'error');
+                    return null;
+                }
+            }
+            
+            saveToCloud(roomCode, data) {
+                // Simulazione salvataggio cloud
+                // In un'app reale, qui faresti una chiamata API
+                const cloudKey = `cloud_room_${roomCode}`;
+                sessionStorage.setItem(cloudKey, JSON.stringify(data));
+            }
+            
+            loadFromCloud(roomCode) {
+                // Simulazione caricamento cloud
+                // In un'app reale, qui faresti una chiamata API
+                const cloudKey = `cloud_room_${roomCode}`;
+                const data = sessionStorage.getItem(cloudKey);
+                return data ? JSON.parse(data) : null;
+            }
+            
+            addPendingChange(type, roomCode, data) {
+                this.pendingChanges.push({
+                    type,
+                    roomCode,
+                    data,
+                    timestamp: new Date().toISOString()
+                });
+            }
+            
+            syncPendingChanges() {
+                if (this.pendingChanges.length === 0) return;
+                
+                const changes = [...this.pendingChanges];
+                this.pendingChanges = [];
+                
+                changes.forEach(change => {
+                    if (change.type === 'save') {
+                        this.saveToCloud(change.roomCode, change.data);
+                    }
+                });
+                
+                this.showNotification('Sincronizzazione completata', 'success');
+            }
+            
+            startPeriodicSync() {
+                if (this.syncInterval) {
+                    clearInterval(this.syncInterval);
+                }
+                
+                this.syncInterval = setInterval(() => {
+                    if (this.isOnline && this.currentRoom) {
+                        this.syncRoomData();
+                    }
+                }, 30000); // Sync ogni 30 secondi
+            }
+            
+            syncRoomData() {
+                if (!this.currentRoom) return;
+                
+                const localData = this.loadRoomData(this.currentRoom);
+                if (localData) {
+                    this.saveToCloud(this.currentRoom, localData);
+                }
+            }
+            
+            exportData() {
+                if (!this.currentRoom) return null;
+                
+                const data = this.loadRoomData(this.currentRoom);
+                if (data) {
+                    const exportData = {
+                        ...data,
+                        exportDate: new Date().toISOString(),
+                        version: "1.0"
+                    };
+                    
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+                        type: 'application/json'
+                    });
+                    
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ezio_lino_${this.currentRoom}_${new Date().toISOString().split('T')[0]}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    
+                    this.showNotification('Dati esportati con successo', 'success');
+                }
+            }
+            
+            importData(file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        
+                        // Validazione dei dati
+                        if (!data.code || !data.participants || !data.expenses) {
+                            throw new Error('Formato file non valido');
+                        }
+                        
+                        // Importa i dati
+                        this.saveRoomData(data.code, data);
+                        this.showNotification('Dati importati con successo', 'success');
+                        
+                        // Aggiorna l'interfaccia
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                        
+                    } catch (error) {
+                        console.error('Errore nell\'importazione:', error);
+                        this.showNotification('Errore nell\'importazione del file', 'error');
+                    }
+                };
+                reader.readAsText(file);
+            }
+            
+            updateLastSavedTime() {
+                const element = document.getElementById('lastSaved');
+                if (element) {
+                    element.textContent = new Date().toLocaleTimeString();
+                }
+            }
+            
+            showNotification(message, type = 'info') {
+                const container = document.getElementById('notifications');
+                const notification = document.createElement('div');
+                
+                const bgColor = type === 'success' ? 'bg-green-500' : 
+                               type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+                
+                notification.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg mb-2 fade-in`;
+                notification.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span>${message}</span>
+                        <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+                
+                container.appendChild(notification);
+                
+                setTimeout(() => {
+                    if (notification.parentElement) {
+                        notification.remove();
+                    }
+                }, 5000);
+            }
+        }
+        
+        // Classe principale dell'applicazione
+        class ExpenseTracker {
+            constructor() {
+                this.storage = new PersistentStorage();
+                this.currentRoom = null;
+                this.roomData = null;
+                
+                this.initializeApp();
+                this.bindEvents();
+            }
+            
+            initializeApp() {
+                // Imposta la data di oggi come default
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('expenseDate').value = today;
+                
+                // Gestione split personalizzato
+                document.querySelectorAll('input[name="splitType"]').forEach(radio => {
+                    radio.addEventListener('change', this.handleSplitTypeChange.bind(this));
+                });
+            }
+            
+            bindEvents() {
+                // Eventi stanza
+                document.getElementById('createRoomBtn').addEventListener('click', this.createRoom.bind(this));
+                document.getElementById('joinRoomBtn').addEventListener('click', this.joinRoom.bind(this));
+                document.getElementById('leaveRoomBtn').addEventListener('click', this.leaveRoom.bind(this));
+                
+                // Eventi partecipanti
+                document.getElementById('addParticipantBtn').addEventListener('click', this.addParticipant.bind(this));
+                document.getElementById('participantName').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.addParticipant();
+                });
+                
+                // Eventi spese
+                document.getElementById('addExpenseBtn').addEventListener('click', this.addExpense.bind(this));
+                
+                // Eventi export/import
+                document.getElementById('exportBtn').addEventListener('click', () => {
+                    this.storage.exportData();
+                });
+                
+                document.getElementById('importBtn').addEventListener('click', () => {
+                    document.getElementById('importFile').click();
+                });
+                
+                document.getElementById('importFile').addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        this.storage.importData(file);
+                    }
+                });
+                
+                // Gestione codice stanza con Enter
+                document.getElementById('roomCode').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.joinRoom();
+                });
+            }
+            
+            createRoom() {
+                const roomCode = this.storage.createRoom();
+                this.currentRoom = roomCode;
+                this.roomData = {
+                    code: roomCode,
+                    participants: [],
+                    expenses: [],
+                    created: new Date().toISOString(),
+                    lastModified: new Date().toISOString()
+                };
+                
+                this.showRoomInterface();
+                this.storage.showNotification(`Stanza creata con codice: ${roomCode}`, 'success');
+            }
+            
+            joinRoom() {
+                const roomCode = document.getElementById('roomCode').value.trim().toUpperCase();
+                
+                if (!roomCode) {
+                    this.storage.showNotification('Inserisci un codice stanza', 'error');
+                    return;
+                }
+                
+                const roomData = this.storage.joinRoom(roomCode);
+                
+                if (roomData) {
+                    this.currentRoom = roomCode;
+                    this.roomData = roomData;
+                    this.showRoomInterface();
+                    this.storage.showNotification(`Connesso alla stanza: ${roomCode}`, 'success');
+                } else {
+                    this.storage.showNotification('Stanza non trovata', 'error');
+                }
+            }
+            
+            leaveRoom() {
+                this.currentRoom = null;
+                this.roomData = null;
+                this.hideRoomInterface();
+                document.getElementById('roomCode').value = '';
+                this.storage.showNotification('Disconnesso dalla stanza', 'info');
+            }
+            
+            showRoomInterface() {
+                document.getElementById('roomInfo').classList.remove('hidden');
+                document.getElementById('currentRoom').textContent = this.currentRoom;
+                
+                // Mostra tutte le sezioni
+                document.getElementById('participantsSection').classList.remove('hidden');
+                document.getElementById('expenseSection').classList.remove('hidden');
+                document.getElementById('expensesListSection').classList.remove('hidden');
+                document.getElementById('balanceSection').classList.remove('hidden');
+                document.getElementById('reimbursementSection').classList.remove('hidden');
+                
+                this.updateInterface();
+            }
+            
+            hideRoomInterface() {
+                document.getElementById('roomInfo').classList.add('hidden');
+                
+                // Nascondi tutte le sezioni
+                document.getElementById('participantsSection').classList.add('hidden');
+                document.getElementById('expenseSection').classList.add('hidden');
+                document.getElementById('expensesListSection').classList.add('hidden');
+                document.getElementById('balanceSection').classList.add('hidden');
+                document.getElementById('reimbursementSection').classList.add('hidden');
+            }
+            
+            addParticipant() {
+                const name = document.getElementById('participantName').value.trim();
+                
+                if (!name) {
+                    this.storage.showNotification('Inserisci un nome', 'error');
+                    return;
+                }
+                
+                if (this.roomData.participants.includes(name)) {
+                    this.storage.showNotification('Partecipante già presente', 'error');
+                    return;
+                }
+                
+                this.roomData.participants.push(name);
+                this.saveRoomData();
+                this.updateInterface();
+                
+                document.getElementById('participantName').value = '';
+                this.storage.showNotification(`${name} aggiunto ai partecipanti`, 'success');
+            }
+            
+            removeParticipant(name) {
+                if (confirm(`Rimuovere ${name} dai partecipanti?`)) {
+                    this.roomData.participants = this.roomData.participants.filter(p => p !== name);
+                    this.saveRoomData();
+                    this.updateInterface();
+                    this.storage.showNotification(`${name} rimosso dai partecipanti`, 'info');
+                }
+            }
+            
+            addExpense() {
+                const date = document.getElementById('expenseDate').value;
+                const amount = parseFloat(document.getElementById('expenseAmount').value);
+                const description = document.getElementById('expenseDescription').value.trim();
+                const payer = document.getElementById('expensePayer').value;
+                const splitType = document.querySelector('input[name="splitType"]:checked').value;
+                
+                if (!date || !amount || !description || !payer) {
+                    this.storage.showNotification('Compila tutti i campi', 'error');
+                    return;
+                }
+                
+                if (amount <= 0) {
+                    this.storage.showNotification('L\'importo deve essere positivo', 'error');
+                    return;
+                }
+                
+                let participants = [];
+                if (splitType === 'all') {
+                    participants = [...this.roomData.participants];
+                } else {
+                    participants = Array.from(document.querySelectorAll('#customSplitList input:checked'))
+                        .map(checkbox => checkbox.value);
+                }
+                
+                if (participants.length === 0) {
+                    this.storage.showNotification('Seleziona almeno un partecipante', 'error');
+                    return;
+                }
+                
+                const expense = {
+                    id: Date.now(),
+                    date,
+                    amount,
+                    description,
+                    payer,
+                    participants,
+                    timestamp: new Date().toISOString()
+                };
+                
+                this.roomData.expenses.push(expense);
+                this.saveRoomData();
+                this.updateInterface();
+                
+                // Reset form
+                document.getElementById('expenseAmount').value = '';
+                document.getElementById('expenseDescription').value = '';
+                document.getElementById('expensePayer').value = '';
+                document.querySelector('input[name="splitType"][value="all"]').checked = true;
+                this.handleSplitTypeChange();
+                
+                this.storage.showNotification('Spesa aggiunta con successo', 'success');
+            }
+            
+            removeExpense(expenseId) {
+                if (confirm('Rimuovere questa spesa?')) {
+                    this.roomData.expenses = this.roomData.expenses.filter(e => e.id !== expenseId);
+                    this.saveRoomData();
+                    this.updateInterface();
+                    this.storage.showNotification('Spesa rimossa', 'info');
+                }
+            }
+            
+            handleSplitTypeChange() {
+                const splitType = document.querySelector('input[name="splitType"]:checked').value;
+                const customSection = document.getElementById('customSplitSection');
+                
+                if (splitType === 'custom') {
+                    customSection.classList.remove('hidden');
+                    this.updateCustomSplitList();
+                } else {
+                    customSection.classList.add('hidden');
+                }
+            }
+            
+            updateCustomSplitList() {
+                const container = document.getElementById('customSplitList');
+                container.innerHTML = '';
+                
+                this.roomData.participants.forEach(participant => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center';
+                    div.innerHTML = `
+                        <input type="checkbox" value="${participant}" id="split_${participant}" class="mr-2">
+                        <label for="split_${participant}" class="text-sm">${participant}</label>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            
+            saveRoomData() {
+                this.roomData.lastModified = new Date().toISOString();
+                this.storage.saveRoomData(this.currentRoom, this.roomData);
+            }
+            
+            updateInterface() {
+                this.updateParticipantsList();
+                this.updateExpensesList();
+                this.updateBalances();
+                this.updateReimbursements();
+                this.updateExpenseForm();
+            }
+            
+            updateParticipantsList() {
+                const container = document.getElementById('participantsList');
+                container.innerHTML = '';
+                
+                this.roomData.participants.forEach(participant => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg fade-in';
+                    div.innerHTML = `
+                        <span class="font-medium">${participant}</span>
+                        <button onclick="app.removeParticipant('${participant}')" class="text-red-500 hover:text-red-700">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            
+            updateExpensesList() {
+                const container = document.getElementById('expensesList');
+                container.innerHTML = '';
+                
+                this.roomData.expenses.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(expense => {
+                    const div = document.createElement('div');
+                    div.className = 'expense-card p-4 bg-gray-50 rounded-lg fade-in';
+                    div.innerHTML = `
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center mb-2">
+                                    <span class="font-medium text-lg">€${expense.amount.toFixed(2)}</span>
+                                    <span class="ml-2 text-gray-600">${expense.description}</span>
+                                </div>
+                                <div class="text-sm text-gray-500">
+                                    <i class="fas fa-calendar mr-1"></i>${new Date(expense.date).toLocaleDateString()}
+                                    <i class="fas fa-user ml-3 mr-1"></i>Pagato da ${expense.payer}
+                                </div>
+                                <div class="text-sm text-gray-500 mt-1">
+                                    <i class="fas fa-users mr-1"></i>Diviso tra: ${expense.participants.join(', ')}
+                                </div>
+                            </div>
+                            <button onclick="app.removeExpense(${expense.id})" class="text-red-500 hover:text-red-700 ml-4">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+                
+                if (this.roomData.expenses.length === 0) {
+                    container.innerHTML = '<p class="text-gray-500 text-center py-8">Nessuna spesa registrata</p>';
+                }
+            }
+            
+            updateBalances() {
+                const balances = this.calculateBalances();
+                const container = document.getElementById('balancesList');
+                container.innerHTML = '';
+                
+                Object.entries(balances).forEach(([participant, balance]) => {
+                    const div = document.createElement('div');
+                    div.className = 'p-4 bg-gray-50 rounded-lg fade-in';
+                    
+                    const balanceClass = balance > 0 ? 'balance-positive' : balance < 0 ? 'balance-negative' : 'text-gray-600';
+                    const icon = balance > 0 ? 'fas fa-arrow-up' : balance < 0 ? 'fas fa-arrow-down' : 'fas fa-check';
+                    
+                    div.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium">${participant}</span>
+                            <div class="flex items-center ${balanceClass}">
+                                <i class="${icon} mr-2"></i>
+                                <span class="font-bold">€${Math.abs(balance).toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div class="text-sm text-gray-500 mt-1">
+                            ${balance > 0 ? 'Da ricevere' : balance < 0 ? 'Da pagare' : 'In pari'}
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            
+            updateReimbursements() {
+                const reimbursements = this.calculateReimbursements();
+                const container = document.getElementById('reimbursementsList');
+                container.innerHTML = '';
+                
+                if (reimbursements.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-8">Nessun rimborso necessario - tutti in pari!</p>';
+                    return;
+                }
+                
+                reimbursements.forEach(reimbursement => {
+                    const div = document.createElement('div');
+                    div.className = 'p-4 bg-blue-50 border border-blue-200 rounded-lg fade-in';
+                    div.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center">
+                                <i class="fas fa-exchange-alt text-blue-600 mr-3"></i>
+                                <span class="font-medium">${reimbursement.from}</span>
+                                <i class="fas fa-arrow-right text-gray-400 mx-2"></i>
+                                <span class="font-medium">${reimbursement.to}</span>
+                            </div>
+                            <span class="font-bold text-blue-600">€${reimbursement.amount.toFixed(2)}</span>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            
+            updateExpenseForm() {
+                const payerSelect = document.getElementById('expensePayer');
+                payerSelect.innerHTML = '<option value="">Seleziona chi ha pagato</option>';
+                
+                this.roomData.participants.forEach(participant => {
+                    const option = document.createElement('option');
+                    option.value = participant;
+                    option.textContent = participant;
+                    payerSelect.appendChild(option);
+                });
+                
+                this.updateCustomSplitList();
+            }
+            
+            calculateBalances() {
+                const balances = {};
+                
+                // Inizializza i bilanci
+                this.roomData.participants.forEach(participant => {
+                    balances[participant] = 0;
+                });
+                
+                // Calcola i bilanci per ogni spesa
+                this.roomData.expenses.forEach(expense => {
+                    const shareAmount = expense.amount / expense.participants.length;
+                    
+                    // Chi ha pagato riceve credito
+                    balances[expense.payer] += expense.amount;
+                    
+                    // Chi deve pagare riceve debito
+                    expense.participants.forEach(participant => {
+                        balances[participant] -= shareAmount;
+                    });
+                });
+                
+                return balances;
+            }
+            
+            calculateReimbursements() {
+                const balances = this.calculateBalances();
+                const reimbursements = [];
+                
+                const debtors = Object.entries(balances).filter(([_, balance]) => balance < 0);
+                const creditors = Object.entries(balances).filter(([_, balance]) => balance > 0);
+                
+                debtors.forEach(([debtor, debtAmount]) => {
+                    let remainingDebt = Math.abs(debtAmount);
+                    
+                    creditors.forEach(([creditor, creditAmount]) => {
+                        if (remainingDebt > 0 && creditAmount > 0) {
+                            const transferAmount = Math.min(remainingDebt, creditAmount);
+                            
+                            reimbursements.push({
+                                from: debtor,
+                                to: creditor,
+                                amount: transferAmount
+                            });
+                            
+                            remainingDebt -= transferAmount;
+                            balances[creditor] -= transferAmount;
+                        }
+                    });
+                });
+                
+                return reimbursements;
+            }
+        }
+        
+        // Inizializza l'applicazione
+        let app;
+        document.addEventListener('DOMContentLoaded', () => {
+            app = new ExpenseTracker();
+        });
+    </script>
+</body>
+</html>
+    <script id="html_badge_script1">
+        window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
+            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDnPWPMiWgCz0cjLwXuAiKD0zEhk38Gz4lEMI%2FKGZTuN6mszV8Sx3pvbuiJOkOeFi4ppEyDv%2FCXHY0F3fxz5g%2FAuRDlMWI8Ml1vaoRqUWsb7u%2BZhADrkds0SgoNPZ8qKSrp67RLelNLibW%2BuJI1sAzw%2FsxlZNNIljoi3V2T%2BHqFmKfxte99ZO%2BBH8QbTGf0niA2Ny1OR3pSgo5ZfzOfFdqOHAGD27hBRTs5yrBVP%2F17emcAkOIY9%2BMm89c%2Fez9OKpgRPErZspOKLgrrnH7BeS81FxL1vXONMtc9cAXWgjZBGbm%2F641qzjt2CwuKy09eaJIpYbdEVkLY8OvIpw6rom0dR0JsnWCVSYNBtbmhDFZDBSmrsv3Oei%2B5zQ%2BOiMnRWZ1fOjA98b4XwLalEpSbBW6VhU3Fuz0wWO2pTyo%2FItLbZyfsI0U8JTWdO8HVjkfDIQvpClEdolSpFH5ZRN0A04v6e6WRMF%2BSkvvSc7DqW0OgpUIRNxZW0EoN6eSrPI6UJOsQ%3D%3D";
+        window.__genspark_locale = "it-IT";
+        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDnPWPMiWgCz0cjLwXuAiKD0zEhk38Gz4lEMI/KGZTuN6mszV8Sx3pvbuiJOkOeFi4ppEyDv/CXHY0F3fxz5g/AuRDlMWI8Ml1vaoRqUWsb7u+ZhADrkds0SgoNPZ8qKSrp67RLelNLibW+uJI1sAzw/sxlZNNIljoi3V2T+HqFmKfxte99ZO+BH8QbTGf0niA2Ny1OR3pSgo5ZfzOfFdqOHAGD27hBRTs5yrBVP/17emcAkOIY9+Mm89c/ez9OKpgRPErZspOKLgrrnH7BeS81FxL1vXONMtc9cAXWgjZBGbm/641qzjt2CwuKy09eaJIpYbdEVkLY8OvIpw6rom0dR0JsnWCVSYNBtbmhDFZDBSmrsv3Oei+5zQ+OiMnRWZ1fOjA98b4XwLalEpSbBW6VhU3Fuz0wWO2pTyo/ItLbZyfsI0U8JTWdO8HVjkfDIQvpClEdolSpFH5ZRN0A04v6e6WRMF+SkvvSc7DqW0OgpUIRNxZW0EoN6eSrPI6UJOsQ==";
+    </script>
+    
+    <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
+    
